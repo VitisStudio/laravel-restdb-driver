@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+        laravel: ['11.*', '12.*']
+        include:
+          - laravel: '11.*'
+            testbench: '9.*'
+          - laravel: '12.*'
+            testbench: '10.*'
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "illuminate/contracts:${{ matrix.laravel }}" "illuminate/database:${{ matrix.laravel }}" "illuminate/http:${{ matrix.laravel }}" --no-interaction --no-update
+          composer require "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Monorepo validate
+        run: vendor/bin/monorepo-builder validate --ansi
+
+      - name: Pint
+        run: vendor/bin/pint --test
+
+      - name: Larastan
+        run: vendor/bin/phpstan analyse --no-progress
+
+      - name: Pest
+        run: vendor/bin/pest --ci
+
+  canary:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    name: laravel/framework@dev canary
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install bleeding-edge framework
+        run: |
+          composer require "illuminate/contracts:dev-master" "illuminate/database:dev-master" "illuminate/http:dev-master" --no-interaction --no-update
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Pest
+        run: vendor/bin/pest --ci

@@ -1,0 +1,34 @@
+name: Split Packages
+
+# On every tag, push each package directory to its read-only mirror so
+# Packagist can serve vitis/restdb-contracts, vitis/restdb, and
+# vitis/restdb-jsonapi as individually installable packages.
+# Requires a SPLIT_ACCESS_TOKEN secret with repo scope.
+
+on:
+  push:
+    tags: ['*']
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - { dir: contracts, repo: restdb-contracts }
+          - { dir: core, repo: restdb }
+          - { dir: jsonapi, repo: restdb-jsonapi }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: symplify/monorepo-split-github-action@v2.3.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.SPLIT_ACCESS_TOKEN }}
+        with:
+          tag: ${{ github.ref_name }}
+          package_directory: packages/${{ matrix.package.dir }}
+          repository_organization: vitis
+          repository_name: ${{ matrix.package.repo }}
+          user_name: vitis-bot
+          user_email: dan@vitis.studio

@@ -1,0 +1,28 @@
+{
+    "name": "vitis/restdb",
+    "description": "RestDB — an Eloquent database driver for RESTful APIs",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "rest", "api", "database", "driver"],
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^11.0||^12.0",
+        "illuminate/database": "^11.0||^12.0",
+        "illuminate/http": "^11.0||^12.0",
+        "spatie/laravel-package-tools": "^1.16",
+        "vitis/restdb-contracts": "^0.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vitis\\RestDB\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Vitis\\RestDB\\RestDBServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

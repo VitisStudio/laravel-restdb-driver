@@ -1,0 +1,16 @@
+{
+    "name": "vitis/restdb-contracts",
+    "description": "Contracts, value objects, and capability primitives for the RestDB Eloquent driver",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "rest", "api", "driver", "contracts"],
+    "require": {
+        "php": "^8.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vitis\\RestDB\\": "src/"
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

@@ -1,0 +1,24 @@
+{
+    "name": "vitis/restdb-jsonapi",
+    "description": "JSON:API adapter for the RestDB Eloquent driver",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "json-api", "jsonapi", "rest", "driver"],
+    "require": {
+        "php": "^8.2",
+        "vitis/restdb": "^0.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vitis\\RestDB\\JsonApi\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Vitis\\RestDB\\JsonApi\\JsonApiServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RestDB Driver — Interactive Architecture</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #fafaf8; --ink: #1a1d23; --muted: #5b6472; --line: #e3e2dd;
+    --accent: #c2410c; --accent-soft: #fff1ea; --accent-border: #f3c7ad;
+    --cfg: #0d7a4f; --cfg-soft: #e7f6ef; --cfg-border: #abe3c8;
+    --build: #4338ca; --build-soft: #eef2ff; --build-border: #c7d2fe;
+    --card: #ffffff; --dim: 0.22;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #15171c; --ink: #f0f2f5; --muted: #9aa3af; --line: #2e323a;
+      --accent: #f97316; --accent-soft: #241710; --accent-border: #7c3a12;
+      --cfg: #34d399; --cfg-soft: #0c2b1f; --cfg-border: #14532d;
+      --build: #a5b4fc; --build-soft: #1a1d3a; --build-border: #3730a3;
+      --card: #1b1e24; --dim: 0.18;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.5; color: var(--ink);
+  }
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.86em;
+  }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 28px 28px 100px; }
+  header h1 { margin: 0 0 2px; font-size: 1.7rem; letter-spacing: -0.4px; }
+  header p { margin: 0 0 18px; color: var(--muted); }
+  header a { color: var(--accent); }
+
+  /* ---- flow controls ---- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .controls button {
+    font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 999px; padding: 5px 14px;
+  }
+  .controls button:hover { border-color: var(--accent); }
+  .controls button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .flowdesc {
+    min-height: 22px; margin: 0 0 14px; font-size: 0.88rem; color: var(--muted);
+  }
+  .flowdesc strong { color: var(--ink); }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.78rem; color: var(--muted); margin-bottom: 16px; }
+  .legend span::before { content: ""; display: inline-block; width: 22px; height: 0; border-top: 3px solid; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+  .legend .l-data::before { border-color: var(--accent); }
+  .legend .l-cfg::before { border-color: var(--cfg); border-top-style: dashed; }
+  .legend .l-build::before { border-color: var(--build); border-top-style: dotted; }
+
+  /* ---- layout ---- */
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+  @media (max-width: 1080px) { .stage { grid-template-columns: 1fr; } .panel { position: static !important; } }
+
+  .canvas { position: relative; }
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+  svg.wires path { fill: none; stroke-width: 1.8; transition: opacity .25s, stroke-width .25s; }
+  svg.wires path.data  { stroke: var(--accent); }
+  svg.wires path.cfg   { stroke: var(--cfg); stroke-dasharray: 6 4; }
+  svg.wires path.build { stroke: var(--build); stroke-dasharray: 2 4; stroke-width: 2; }
+  svg.wires path.dimmed { opacity: var(--dim); }
+  svg.wires path.lit { stroke-width: 3; }
+
+  .grid { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0,1fr) 280px; gap: 18px 40px; }
+
+  /* ---- bands ---- */
+  .band { border: 1.5px dashed var(--line); border-radius: 14px; padding: 14px 16px 16px; }
+  .band > h3 {
+    margin: -24px 0 10px; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--muted);
+  }
+  .band > h3 span { background: var(--bg); padding: 0 8px; }
+  .band.buildband { grid-column: 1 / -1; border-color: var(--build-border); }
+  .band.buildband > h3 span { color: var(--build); }
+  .band.cfgband { border-color: var(--cfg-border); }
+  .band.cfgband > h3 span { color: var(--cfg); }
+  .band.runband > h3 span { color: var(--accent); }
+
+  .col { display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+  /* ---- nodes ---- */
+  .node {
+    position: relative; background: var(--card); border: 1.5px solid var(--line); border-radius: 10px;
+    padding: 9px 14px; min-width: 170px; max-width: 290px; text-align: center; cursor: pointer;
+    transition: opacity .25s, box-shadow .15s, border-color .15s; user-select: none;
+  }
+  .node:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+  .node .nt { font-weight: 700; font-size: 0.88rem; }
+  .node .ns { font-size: 0.73rem; color: var(--muted); margin-top: 1px; }
+  .node.small { min-width: 120px; padding: 7px 10px; }
+  .node.small .nt { font-size: 0.8rem; }
+  .node.accent { border-color: var(--accent-border); background: var(--accent-soft); }
+  .node.cfgn   { border-color: var(--cfg-border); background: var(--cfg-soft); }
+  .node.buildn { border-color: var(--build-border); background: var(--build-soft); }
+  .node.dimmed { opacity: var(--dim); }
+  .node.selected { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+  .node .step {
+    position: absolute; top: -11px; left: -11px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .node .tag {
+    display: inline-block; margin-top: 3px; font-size: 0.62rem; font-weight: 800; letter-spacing: .5px;
+    text-transform: uppercase; border-radius: 999px; padding: 1px 8px;
+  }
+  .tag.hatch { background: var(--accent); color: #fff; }
+  .tag.cfgt  { background: var(--cfg); color: #fff; }
+  .tag.gen   { background: var(--build); color: #fff; }
+
+  /* ---- detail panel ---- */
+  .panel {
+    position: sticky; top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px; max-height: calc(100vh - 32px); overflow-y: auto;
+  }
+  .panel h2 { margin: 0 0 2px; font-size: 1.1rem; }
+  .panel .ptag { font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+  .panel p { font-size: 0.87rem; color: var(--ink); }
+  .panel h4 { margin: 16px 0 6px; font-size: 0.74rem; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips code {
+    background: var(--accent-soft); border: 1px solid var(--accent-border); color: var(--accent);
+    border-radius: 5px; padding: 1px 7px; font-size: 0.74rem; white-space: nowrap;
+  }
+  .chips.green code { background: var(--cfg-soft); border-color: var(--cfg-border); color: var(--cfg); }
+  .chips.blue code  { background: var(--build-soft); border-color: var(--build-border); color: var(--build); }
+  .panel ul { margin: 4px 0 0; padding-left: 18px; }
+  .panel li { font-size: 0.84rem; margin: 3px 0; }
+  .panel pre {
+    background: #16181d; color: #e3e6eb; border-radius: 8px; padding: 12px 14px;
+    font-size: 0.76rem; line-height: 1.5; overflow-x: auto;
+  }
+  .panel pre code { background: none; border: none; color: inherit; padding: 0; }
+
+  .callout {
+    grid-column: 1 / -1; border-left: 4px solid var(--cfg); background: var(--cfg-soft);
+    border-radius: 0 10px 10px 0; padding: 10px 16px; font-size: 0.85rem;
+  }
+  .callout b { color: var(--cfg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>RestDB Driver — Interactive Architecture</h1>
+  <p>Click any component for its responsibilities, config keys, and model-level escape hatches. Use the flow buttons to trace a path. Companion to the <a href="plan.html">implementation plan</a>.</p>
+</header>
+
+<div class="controls">
+  <button data-flow="read">▶ Read query</button>
+  <button data-flow="write">▶ Write (save)</button>
+  <button data-flow="authf">▶ Auth + 401 refresh</button>
+  <button data-flow="codegen">▶ Spec → generated models</button>
+  <button data-flow="config">▶ Config resolution</button>
+  <button data-flow="" id="reset">✕ Reset</button>
+</div>
+<p class="flowdesc" id="flowdesc">Select a flow, or click a node.</p>
+
+<div class="legend">
+  <span class="l-data">query / data path</span>
+  <span class="l-cfg">config wiring &amp; capability layering</span>
+  <span class="l-build">build-time codegen (artisan)</span>
+</div>
+
+<div class="stage">
+<div class="canvas" id="canvas">
+  <svg class="wires" id="wires"></svg>
+
+  <div class="grid">
+
+    <!-- ============ BUILD-TIME BAND ============ -->
+    <div class="band buildband">
+      <h3><span>Build time — run once, commit the output</span></h3>
+      <div class="row">
+        <div class="node buildn" id="n-spec">
+          <div class="nt">API spec file</div>
+          <div class="ns mono">storage/api-specs/crm.json</div>
+          <div class="ns">OpenAPI / JSON:API document</div>
+        </div>
+        <div class="node buildn" id="n-makemodels">
+          <div class="nt">restdb:make-models</div>
+          <div class="ns mono">artisan restdb:make-models crm --spec=…</div>
+          <div class="ns">spec → physical Eloquent classes</div>
+        </div>
+        <div class="node buildn" id="n-genmodels">
+          <div class="nt">Generated models</div>
+          <div class="ns mono">app/Models/Crm/*.php</div>
+          <span class="tag gen">committed code — yours to edit</span>
+        </div>
+        <div class="node buildn" id="n-discover">
+          <div class="nt">restdb:discover</div>
+          <div class="ns">spec → capability manifest</div>
+        </div>
+        <div class="node buildn" id="n-manifest">
+          <div class="nt">Capability manifest</div>
+          <div class="ns">committed JSON · advisory only</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ RUNTIME BAND ============ -->
+    <div class="band runband">
+      <h3><span>Runtime — a normal Eloquent call</span></h3>
+      <div class="col">
+        <div class="node" id="n-app">
+          <div class="nt">Your application</div>
+          <div class="ns mono">Article::where('status','open')-&gt;get()</div>
+        </div>
+        <div class="node accent" id="n-model">
+          <div class="nt">Model + trait</div>
+          <div class="ns mono">use IsJsonApiResource; $connection = 'crm'</div>
+          <span class="tag hatch">escape hatches live here</span>
+        </div>
+        <div class="node" id="n-ebuilder">
+          <div class="nt">Eloquent\Builder (RestDB)</div>
+          <div class="ns">whereHas decomposition · paginate guards</div>
+        </div>
+        <div class="node" id="n-qbuilder">
+          <div class="nt">Query\Builder — gated</div>
+          <div class="ns">every mutator checked eagerly · raw/joins throw</div>
+        </div>
+        <div class="node" id="n-intent">
+          <div class="nt">IntentFactory → Intent DTOs</div>
+          <div class="ns">where-type whitelist (phase 2) · never drops a where</div>
+        </div>
+        <div class="node" id="n-conn">
+          <div class="nt">RestConnection</div>
+          <div class="ns">sequences contracts · page-drain loop · QueryExecuted</div>
+        </div>
+        <div class="row">
+          <div class="node small" id="n-compiler">
+            <div class="nt">RequestCompiler</div>
+            <div class="ns">+ FilterDialect</div>
+          </div>
+          <div class="node small" id="n-endpoints">
+            <div class="nt">EndpointResolver</div>
+          </div>
+          <div class="node small" id="n-paginator">
+            <div class="nt">Paginator</div>
+          </div>
+          <div class="node small" id="n-parser">
+            <div class="nt">ResponseParser</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="node" id="n-transport">
+            <div class="nt">Transport</div>
+            <div class="ns">Laravel HTTP client · retry · 401-refresh-once</div>
+          </div>
+          <div class="node small" id="n-auth">
+            <div class="nt">Authenticator</div>
+            <div class="ns">6 drivers + class-string</div>
+          </div>
+        </div>
+        <div class="node" id="n-api">
+          <div class="nt">Remote REST API</div>
+          <div class="ns mono">GET /v2/articles?filter[status]=open&amp;page[size]=25</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ CONFIG BAND ============ -->
+    <div class="band cfgband">
+      <h3><span>Config — where most features are set</span></h3>
+      <div class="col">
+        <div class="node cfgn" id="n-dbconfig">
+          <div class="nt">config/database.php</div>
+          <div class="ns">the connection block — adapter, auth, http, pagination, dialect, endpoints, capabilities, guards</div>
+          <span class="tag cfgt">primary control surface</span>
+        </div>
+        <div class="node cfgn" id="n-pkgconfig">
+          <div class="nt">config/restdb.php</div>
+          <div class="ns">adapter + auth registries · package defaults</div>
+        </div>
+        <div class="node cfgn" id="n-factory">
+          <div class="nt">RestConnectionFactory</div>
+          <div class="ns">config array → wired RestConnection</div>
+        </div>
+        <div class="node cfgn" id="n-adapter">
+          <div class="nt">Adapter</div>
+          <div class="ns mono">'json-api' | 'generic' | custom</div>
+          <div class="ns">factory of all strategies</div>
+        </div>
+        <div class="node cfgn" id="n-caplayers">
+          <div class="nt">Effective capabilities</div>
+          <div class="ns">adapter baseline ∪ paginator ∪ config ± model narrowing</div>
+        </div>
+        <div class="node cfgn" id="n-gate">
+          <div class="nt">CapabilityGate</div>
+          <div class="ns">eager (builder line) + late (compile sweep)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Config-first, model-second.</b> The connection block in <code>config/database.php</code> sets the large majority of behavior —
+      adapter, auth driver, pagination strategy, filter dialect, endpoints, capabilities, guards, HTTP options. Models are the
+      <b>escape hatch</b>: generated classes are committed code you own — narrow capabilities, override endpoint/resource type,
+      remap names, add casts and relations. A model can <em>tighten</em> what config allows, never widen it.
+    </div>
+
+  </div>
+</div>
+
+<!-- ============ DETAIL PANEL ============ -->
+<aside class="panel" id="panel">
+  <span class="ptag" id="p-tag">Overview</span>
+  <h2 id="p-title">How to read this diagram</h2>
+  <div id="p-body">
+    <p>Three bands. <b>Build time</b> (top): an artisan command reads a JSON spec file and writes real, physical model
+    classes into your app — they're committed code, not runtime magic. <b>Runtime</b> (left): a normal Eloquent call flows
+    down through the gated builder to HTTP and back. <b>Config</b> (right): one connection array wires nearly everything;
+    the green dashed lines show what it controls.</p>
+    <p>Click any node for details. Every node lists the <b>config keys</b> that drive it and the <b>model-level overrides</b>
+    that can escape-hatch it.</p>
+  </div>
+</aside>
+</div>
+
+</div>
+
+<script>
+const DETAILS = {
+  'n-spec': {
+    tag: 'Build time', title: 'API spec file',
+    body: `<p>An OpenAPI (or JSON:API-flavored OpenAPI) document, committed to the repo — e.g.
+    <code>storage/api-specs/crm.json</code>. It is the single input to both build-time commands.
+    <b>Never parsed at runtime</b>; runtime reads only generated output.</p>`,
+    config: ['manifest_path'],
+  },
+  'n-makemodels': {
+    tag: 'Build time · artisan', title: 'restdb:make-models',
+    body: `<p>Points at a specific spec file and generates <b>physical model classes</b> in your app —
+    so a spec-backed API feels exactly like any other Eloquent model.</p>
+    <pre><code>php artisan restdb:make-models crm \\
+  --spec=storage/api-specs/crm.json \\
+  --path=app/Models/Crm \\
+  --namespace="App\\Models\\Crm"</code></pre>
+    <p>Per resource type it emits: class + trait, <code>$connection</code>, <code>$table</code> (resource type),
+    <code>$casts</code> from schema types, relation methods from spec relationships, and a
+    <code>@property</code> PHPDoc block for IDE support. Re-running never overwrites an edited class without
+    <code>--force</code>.</p>`,
+    config: [],
+  },
+  'n-genmodels': {
+    tag: 'Build time → your code', title: 'Generated model classes',
+    body: `<p><b>Real files in <code>app/Models/</code></b>, committed like any hand-written model.
+    Generation is a starting point, not a cage: once generated, they are yours — every escape hatch on the
+    Model node applies. You interact with them exactly like any other Eloquent model:
+    <code>CrmArticle::where(…)->paginate(25)</code>.</p>`,
+    hatches: ['edit freely after generation', 'add scopes, casts, relations', 'narrow capabilities per model'],
+  },
+  'n-discover': {
+    tag: 'Build time · artisan', title: 'restdb:discover',
+    body: `<p>Reads the same spec and writes a <b>committed, human-reviewable capability manifest</b> —
+    which filters, sorts, includes and page params each resource actually supports.
+    <code>--check</code> mode fails CI when the manifest is stale against the spec.</p>`,
+    config: ['manifest_path'],
+  },
+  'n-manifest': {
+    tag: 'Build time output', title: 'Capability manifest',
+    body: `<p>Committed JSON consumed by the capability layering at runtime. <b>Advisory only</b> —
+    declared config always outranks discovered values, so a wrong spec can never widen what you explicitly set.</p>`,
+  },
+  'n-app': {
+    tag: 'Runtime', title: 'Your application',
+    body: `<p>Controllers, jobs, Livewire, Nova — anything that talks to Eloquent. The north star:
+    nothing here knows HTTP is underneath, <em>within the capabilities the connection declares</em>.
+    Outside them, it fails loudly at your line with a fix hint — never silently.</p>`,
+  },
+  'n-model': {
+    tag: 'Runtime · escape-hatch layer', title: 'Model + trait',
+    body: `<p>Generated or hand-written. The trait (<code>InteractsWithRestApi</code>, composed by
+    <code>IsJsonApiResource</code>) overrides only what a non-SQL backend needs. This is the one place
+    users customize <b>per resource</b> — everything else comes from config.</p>
+    <p>Rule: a model may <b>drop</b> capabilities, never grant ones the connection denies.</p>`,
+    hatches: [
+      "$connection — pick the connection",
+      "$table — resource type / endpoint by convention",
+      "$endpoint — override resolved path",
+      "$restCapabilities — narrow (e.g. force read-only)",
+      "name-mapping overrides (kebab/camel ↔ snake)",
+      "$casts — Eloquent casts are the only typing system",
+      "relations & scopes — plain Eloquent",
+    ],
+    config: ['connections.{name}.endpoints', 'connections.{name}.capabilities'],
+  },
+  'n-ebuilder': {
+    tag: 'Runtime', title: 'Eloquent\\Builder (RestDB)',
+    body: `<p>Handles the Eloquent-level moves that need REST semantics: <code>whereHas()</code> decomposition
+    (relation query → pluck keys → <code>whereIn</code>, capped), <code>paginate()</code> guards
+    (requires <code>TotalCount</code>, hints <code>simplePaginate()</code>), eager loading via separate gated
+    queries or zero-HTTP <code>include=</code> on JSON:API.</p>`,
+    config: ['guards.where_has_max_keys', 'pagination.meta_total'],
+  },
+  'n-qbuilder': {
+    tag: 'Runtime · phase-1 gate', title: 'Query\\Builder — gated',
+    body: `<p>Subclasses <code>Illuminate\\Database\\Query\\Builder</code> (laravel-mongodb strategy).
+    Gated mutators (<code>where/orderBy/limit/…</code>) check the gate <b>before mutating state</b> and throw
+    at the developer's own line. SQL-only surface (<code>join/having/raw/lock/…</code>) always throws
+    <code>BadMethodCallException</code>.</p>`,
+    config: ['connections.{name}.capabilities', 'capabilities.filter.operators'],
+  },
+  'n-intent': {
+    tag: 'Runtime · phase-2 gate', title: 'IntentFactory → Intent DTOs',
+    body: `<p>Normalizes builder state into immutable <code>SelectIntent / InsertIntent / UpdateIntent /
+    DeleteIntent</code>. The where-type whitelist re-validates <em>everything</em> — wheres injected by
+    relations, global scopes, packages, or future Laravel where-types throw
+    <code>UnsupportedQueryException</code>. A dropped where is a data-exposure bug; nothing is ever dropped.</p>`,
+  },
+  'n-conn': {
+    tag: 'Runtime · orchestrator', title: 'RestConnection',
+    body: `<p>Extends <code>Illuminate\\Database\\Connection</code> but owns no API knowledge — it sequences
+    contracts: compile → page → send → parse → drain. Runs inside <code>Connection::run()</code> so
+    <code>QueryExecuted</code>, <code>DB::listen</code>, query log, and Telescope all see the real request line
+    with real timing. Transactions/schema throw, always.</p>`,
+    config: ['guards.max_pages', 'connections.{name}.http'],
+  },
+  'n-compiler': {
+    tag: 'Adapter strategy', title: 'RequestCompiler + FilterDialect',
+    body: `<p>Intent → <code>CompiledRequest</code> (method, path, query, body). The JSON:API compiler emits
+    <code>filter[…] / sort / fields[…] / include / page[…]</code>; writes are <code>POST</code> /
+    dirty-only <code>PATCH</code> / <code>DELETE</code>. The <b>FilterDialect</b> is the most-customized seam —
+    pluggable per connection. Generic adapter: you supply your own compiler class.</p>`,
+    config: ['filter_dialect', 'compiler (generic adapter)', 'adapter'],
+    hatches: ['per-API custom compiler class via config'],
+  },
+  'n-endpoints': {
+    tag: 'Adapter strategy', title: 'EndpointResolver',
+    body: `<p>Maps <code>$table</code> → path by convention (<code>articles → /articles</code>), with explicit
+    per-resource overrides in config and per-model escape hatch.</p>`,
+    config: ["endpoints — e.g. 'articles' => '/v2/articles'"],
+    hatches: ['$endpoint on the model'],
+  },
+  'n-paginator': {
+    tag: 'Adapter strategy', title: 'Paginator',
+    body: `<p>Three JSON:API strategies — <code>page-number</code>, <code>offset</code>, <code>cursor</code> —
+    chosen in config. <code>links.next</code> is the portable has-more signal. Contributes capabilities
+    (<code>Limit / PageNumber / TotalCount…</code>) into the effective set. Generic adapter default:
+    <code>NullPaginator</code> (one page, ever).</p>`,
+    config: ['pagination.strategy', 'pagination.size', 'pagination.meta_total', 'paginator (generic adapter)'],
+  },
+  'n-parser': {
+    tag: 'Adapter strategy', title: 'ResponseParser',
+    body: `<p>Body → flat attribute rows. JSON:API parser builds a <code>(type,id)</code> identity map over
+    <code>data</code> + <code>included</code> (so <code>with('author')</code> costs zero extra HTTP), exposes
+    to-one linkage as <code>{relation}_id</code>, maps error documents to field-keyed validation errors.
+    Generic adapter: you supply your own parser class.</p>`,
+    config: ['parser (generic adapter)'],
+    hatches: ['custom parser may wrap spatie/laravel-data if you like it — zero coupling'],
+  },
+  'n-transport': {
+    tag: 'Runtime · HTTP', title: 'Transport',
+    body: `<p>Builds a <code>PendingRequest</code> from an injected HTTP factory: base URL → headers →
+    timeout/retry → authenticator → 401-refresh-retry-once. <code>Http::fake()</code> works everywhere.
+    Non-2xx → parsed and mapped: 404 → <code>ModelNotFoundException</code>, 422 →
+    <code>ApiValidationException</code>, else <code>ApiResponseException</code> (Authorization always redacted).</p>`,
+    config: ['base_url', 'headers', 'http.timeout', 'http.connect_timeout', 'http.retry'],
+  },
+  'n-auth': {
+    tag: 'Runtime · auth', title: 'Authenticator',
+    body: `<p>Six built-ins — <code>none / basic / bearer / api_key / oauth2_client_credentials /
+    oauth2_refresh_token</code> — plus any class-string implementing <code>Authenticator</code>.
+    OAuth2 tokens cached with TTL skew, stampede-locked, no static state (Octane-safe).</p>`,
+    config: ['auth.driver', 'auth.token_url', 'auth.client_id / client_secret', 'auth.scopes', 'auth.cache_store', 'auth.expiry_skew'],
+    hatches: ['custom Authenticator class-string in auth.driver'],
+  },
+  'n-api': {
+    tag: 'The outside world', title: 'Remote REST API',
+    body: `<p>Any RESTful API (generic adapter) or JSON:API v1.1 server (json-api adapter). The one risk the
+    client can't fully gate: a server silently ignoring a declared <code>filter[x]</code> — which is why
+    discovery manifests exist and declared capabilities should be honest.</p>`,
+  },
+  'n-dbconfig': {
+    tag: 'Config · primary surface', title: 'config/database.php',
+    body: `<p><b>The majority of features are configured here</b>, per connection — no code required for a
+    JSON:API backend:</p>`,
+    config: ["driver => 'restdb'", "adapter => 'json-api' | 'generic'", 'base_url / headers', 'auth.* (driver + credentials)',
+      'http.* (timeout, retry)', 'pagination.* (strategy, size, meta_total)', 'filter_dialect', 'endpoints (per-resource paths)',
+      'capabilities (additive and subtractive)', 'guards (max_pages, where_has_max_keys)'],
+  },
+  'n-pkgconfig': {
+    tag: 'Config · package level', title: 'config/restdb.php',
+    body: `<p>Published package config: the <b>adapter registry</b> and <b>auth-driver registry</b>
+    (extensible by third-party packages via <code>RestDB::registerAdapter()</code>), package-level defaults
+    for guards/http that connections override, and <code>manifest_path</code> for discovery output.</p>`,
+    config: ['adapters', 'auth_drivers', 'guards', 'http', 'manifest_path'],
+  },
+  'n-factory': {
+    tag: 'Config → runtime', title: 'RestConnectionFactory',
+    body: `<p>The <code>db</code> extension target. Takes the resolved connection array, looks up the adapter
+    in the registry, asks it for compiler/parser/paginator/endpoints/capabilities, resolves the authenticator,
+    and assembles <code>RestConnection</code>. Bypasses <code>ConnectionFactory</code> — no PDO anywhere.</p>`,
+  },
+  'n-adapter': {
+    tag: 'Config-selected strategy factory', title: 'Adapter',
+    body: `<p>One contract, both layers: <code>GenericAdapter</code> ("talk to any REST API" — you supply
+    compiler/parser via config, capability baseline <b>none</b>) and <code>JsonApiAdapter</code> (everything
+    preconfigured for JSON:API v1.1). Third-party adapters register through the same registry.</p>`,
+    config: ["adapter => 'json-api' | 'generic' | registered name"],
+  },
+  'n-caplayers': {
+    tag: 'Capability layering', title: 'Effective capabilities',
+    body: `<p>Layered, lowest → highest precedence:</p>
+    <ul>
+      <li>1. Adapter baseline (generic = <b>none</b>; JSON:API = spec-guaranteed only)</li>
+      <li>2. <code>Paginator::provides()</code></li>
+      <li>3. Connection config <code>capabilities</code> — additive <em>and</em> subtractive</li>
+      <li>4. Model-level narrowing — drop only, never grant</li>
+    </ul>
+    <p>Discovery manifest entries are advisory inputs; declared config always wins.</p>`,
+    config: ['connections.{name}.capabilities'],
+    hatches: ['$restCapabilities narrowing on the model'],
+  },
+  'n-gate': {
+    tag: 'Enforcement', title: 'CapabilityGate',
+    body: `<p>Two-phase. <b>Eager:</b> builder mutators throw at the developer's line.
+    <b>Late:</b> compile-time sweep re-validates the normalized query, catching wheres injected behind the
+    builder's back. Exceptions carry connection, capability, model, method — and the fix:</p>
+    <pre><code>Connection [crm] does not support [page.limit]
+(used in limit() on App\\Models\\Article).
+Hint: add 'page.limit' under
+connections.crm.capabilities — or remove ->limit().</code></pre>`,
+  },
+};
+
+const EDGES = [
+  // build-time
+  ['n-spec','n-makemodels','build'], ['n-makemodels','n-genmodels','build'],
+  ['n-spec','n-discover','build'], ['n-discover','n-manifest','build'],
+  ['n-genmodels','n-model','build'], ['n-manifest','n-caplayers','build'],
+  // runtime data path
+  ['n-app','n-model','data'], ['n-model','n-ebuilder','data'], ['n-ebuilder','n-qbuilder','data'],
+  ['n-qbuilder','n-intent','data'], ['n-intent','n-conn','data'],
+  ['n-conn','n-compiler','data'], ['n-compiler','n-endpoints','data'], ['n-conn','n-paginator','data'],
+  ['n-conn','n-transport','data'], ['n-transport','n-auth','data'], ['n-transport','n-api','data'],
+  ['n-api','n-transport','data'], ['n-transport','n-parser','data'], ['n-parser','n-conn','data'],
+  // config wiring
+  ['n-dbconfig','n-factory','cfg'], ['n-pkgconfig','n-factory','cfg'],
+  ['n-factory','n-adapter','cfg'], ['n-factory','n-conn','cfg'],
+  ['n-adapter','n-compiler','cfg'], ['n-adapter','n-paginator','cfg'], ['n-adapter','n-parser','cfg'], ['n-adapter','n-endpoints','cfg'],
+  ['n-dbconfig','n-caplayers','cfg'], ['n-adapter','n-caplayers','cfg'], ['n-paginator','n-caplayers','cfg'],
+  ['n-model','n-caplayers','cfg'], ['n-caplayers','n-gate','cfg'], ['n-gate','n-qbuilder','cfg'],
+  ['n-dbconfig','n-auth','cfg'], ['n-dbconfig','n-transport','cfg'],
+];
+
+const FLOWS = {
+  read: {
+    desc: '<strong>Read:</strong> Article::where(…)->limit(25)->get() — eager gate at each mutator, phase-2 sweep, compile, page, authed HTTP, parse, hydrate. One request when limit is satisfied; drain loop otherwise.',
+    steps: ['n-app','n-model','n-ebuilder','n-qbuilder','n-intent','n-conn','n-compiler','n-paginator','n-transport','n-auth','n-api','n-parser'],
+    edges: [['n-app','n-model'],['n-model','n-ebuilder'],['n-ebuilder','n-qbuilder'],['n-qbuilder','n-intent'],['n-intent','n-conn'],
+      ['n-conn','n-compiler'],['n-compiler','n-endpoints'],['n-conn','n-paginator'],['n-conn','n-transport'],['n-transport','n-auth'],
+      ['n-transport','n-api'],['n-api','n-transport'],['n-transport','n-parser'],['n-parser','n-conn']],
+    extra: ['n-endpoints','n-gate'],
+  },
+  write: {
+    desc: '<strong>Write:</strong> $article->save() — dirty attributes only → UpdateIntent → PATCH; model re-filled from the response body (server may mutate). 422 maps to field-keyed validation errors.',
+    steps: ['n-app','n-model','n-qbuilder','n-intent','n-conn','n-compiler','n-transport','n-api','n-parser'],
+    edges: [['n-app','n-model'],['n-model','n-ebuilder'],['n-ebuilder','n-qbuilder'],['n-qbuilder','n-intent'],['n-intent','n-conn'],
+      ['n-conn','n-compiler'],['n-conn','n-transport'],['n-transport','n-api'],['n-api','n-transport'],['n-transport','n-parser'],['n-parser','n-conn']],
+    extra: ['n-ebuilder'],
+  },
+  authf: {
+    desc: '<strong>Auth:</strong> Transport asks the Authenticator (cached OAuth2 token, lock-guarded fetch on miss) → request → on 401: invalidate, re-authenticate, retry exactly once. Second 401 surfaces as RestDBAuthenticationException.',
+    steps: ['n-transport','n-auth','n-api'],
+    edges: [['n-transport','n-auth'],['n-transport','n-api'],['n-api','n-transport']],
+    extra: ['n-dbconfig'],
+  },
+  codegen: {
+    desc: '<strong>Codegen:</strong> point an artisan command at a JSON spec file → physical model classes generated into app/Models (committed, editable) + a capability manifest. Runtime never touches the spec.',
+    steps: ['n-spec','n-makemodels','n-genmodels','n-model'],
+    edges: [['n-spec','n-makemodels'],['n-makemodels','n-genmodels'],['n-genmodels','n-model'],
+      ['n-spec','n-discover'],['n-discover','n-manifest'],['n-manifest','n-caplayers']],
+    extra: ['n-discover','n-manifest','n-caplayers'],
+  },
+  config: {
+    desc: '<strong>Config resolution:</strong> connection block + package registries → factory builds the connection; adapter supplies strategies; capabilities layer up (baseline ∪ paginator ∪ config) then models narrow; the gate enforces at the builder.',
+    steps: ['n-dbconfig','n-pkgconfig','n-factory','n-adapter','n-caplayers','n-gate','n-qbuilder'],
+    edges: [['n-dbconfig','n-factory'],['n-pkgconfig','n-factory'],['n-factory','n-adapter'],['n-factory','n-conn'],
+      ['n-adapter','n-compiler'],['n-adapter','n-paginator'],['n-adapter','n-parser'],['n-adapter','n-endpoints'],
+      ['n-dbconfig','n-caplayers'],['n-adapter','n-caplayers'],['n-paginator','n-caplayers'],['n-model','n-caplayers'],
+      ['n-caplayers','n-gate'],['n-gate','n-qbuilder'],['n-dbconfig','n-auth'],['n-dbconfig','n-transport']],
+    extra: ['n-model','n-conn','n-compiler','n-paginator','n-parser','n-endpoints','n-auth','n-transport'],
+  },
+};
+
+const canvas = document.getElementById('canvas');
+const svg = document.getElementById('wires');
+const pathEls = new Map();
+
+function nodeRect(id) {
+  const el = document.getElementById(id);
+  const c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
+  return { x: r.left - c.left, y: r.top - c.top, w: r.width, h: r.height,
+           cx: r.left - c.left + r.width / 2, cy: r.top - c.top + r.height / 2 };
+}
+
+function edgePath(a, b) {
+  const dx = b.cx - a.cx, dy = b.cy - a.cy;
+  let x1, y1, x2, y2;
+  if (Math.abs(dy) >= Math.abs(dx)) {            // mostly vertical
+    y1 = dy > 0 ? a.y + a.h : a.y;  x1 = a.cx;
+    y2 = dy > 0 ? b.y : b.y + b.h;  x2 = b.cx;
+    const m = (y1 + y2) / 2;
+    return `M ${x1} ${y1} C ${x1} ${m}, ${x2} ${m}, ${x2} ${y2}`;
+  }
+  x1 = dx > 0 ? a.x + a.w : a.x;  y1 = a.cy;
+  x2 = dx > 0 ? b.x : b.x + b.w;  y2 = b.cy;
+  const m = (x1 + x2) / 2;
+  return `M ${x1} ${y1} C ${m} ${y1}, ${m} ${y2}, ${x2} ${y2}`;
+}
+
+function draw() {
+  const c = canvas.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${c.width} ${c.height}`);
+  svg.innerHTML = `<defs>
+    <marker id="m-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+    <marker id="m-cfg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--cfg)"/></marker>
+    <marker id="m-build" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--build)"/></marker>
+  </defs>`;
+  pathEls.clear();
+  for (const [from, to, kind] of EDGES) {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', edgePath(nodeRect(from), nodeRect(to)));
+    p.setAttribute('class', kind);
+    p.setAttribute('marker-end', `url(#m-${kind})`);
+    svg.appendChild(p);
+    pathEls.set(`${from}->${to}`, p);
+  }
+  if (activeFlow) applyFlow(activeFlow, true);
+}
+
+let activeFlow = null;
+
+function clearState() {
+  document.querySelectorAll('.node').forEach(n => {
+    n.classList.remove('dimmed', 'selected');
+    n.querySelector('.step')?.remove();
+  });
+  pathEls.forEach(p => p.classList.remove('dimmed', 'lit'));
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+}
+
+function applyFlow(name, redrawOnly) {
+  const f = FLOWS[name];
+  if (!redrawOnly) {
+    clearState();
+    activeFlow = name;
+    document.querySelector(`[data-flow="${name}"]`).classList.add('active');
+    document.getElementById('flowdesc').innerHTML = f.desc;
+  }
+  const keep = new Set([...f.steps, ...(f.extra || [])]);
+  document.querySelectorAll('.node').forEach(n => {
+    if (!keep.has(n.id)) n.classList.add('dimmed');
+    else n.classList.remove('dimmed');
+    n.querySelector('.step')?.remove();
+  });
+  f.steps.forEach((id, i) => {
+    const b = document.createElement('span');
+    b.className = 'step'; b.textContent = i + 1;
+    document.getElementById(id).appendChild(b);
+  });
+  const litKeys = new Set(f.edges.map(([a, b]) => `${a}->${b}`));
+  pathEls.forEach((p, key) => {
+    if (litKeys.has(key)) { p.classList.add('lit'); p.classList.remove('dimmed'); }
+    else p.classList.add('dimmed');
+  });
+}
+
+document.querySelectorAll('[data-flow]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!btn.dataset.flow) {  // reset
+      clearState(); activeFlow = null;
+      document.getElementById('flowdesc').textContent = 'Select a flow, or click a node.';
+      return;
+    }
+    applyFlow(btn.dataset.flow);
+  });
+});
+
+function showDetails(id) {
+  const d = DETAILS[id];
+  if (!d) return;
+  document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+  document.getElementById(id).classList.add('selected');
+  document.getElementById('p-tag').textContent = d.tag;
+  document.getElementById('p-title').textContent = d.title;
+  let html = d.body || '';
+  if (d.config?.length)
+    html += `<h4>Config keys</h4><div class="chips green">${d.config.map(c => `<code>${c}</code>`).join('')}</div>`;
+  if (d.hatches?.length)
+    html += `<h4>Model-level escape hatches</h4><div class="chips">${d.hatches.map(c => `<code>${c}</code>`).join('')}</div>`;
+  document.getElementById('p-body').innerHTML = html;
+}
+
+document.querySelectorAll('.node').forEach(n => n.addEventListener('click', () => showDetails(n.id)));
+
+new ResizeObserver(() => draw()).observe(canvas);
+window.addEventListener('resize', draw);
+draw();
+</script>
+</body>
+</html>

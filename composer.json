@@ -1,0 +1,57 @@
+{
+    "name": "vitis/restdb-monorepo",
+    "description": "Development monorepo for the RestDB Eloquent driver packages (never published)",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^11.0||^12.0",
+        "illuminate/database": "^11.0||^12.0",
+        "illuminate/http": "^11.0||^12.0",
+        "spatie/laravel-package-tools": "^1.16"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.14",
+        "orchestra/testbench": "^9.0||^10.0",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-arch": "^3.0",
+        "symplify/monorepo-builder": "^11.2"
+    },
+    "replace": {
+        "vitis/restdb": "self.version",
+        "vitis/restdb-contracts": "self.version",
+        "vitis/restdb-jsonapi": "self.version"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vitis\\RestDB\\": [
+                "packages/contracts/src/",
+                "packages/core/src/"
+            ],
+            "Vitis\\RestDB\\JsonApi\\": "packages/jsonapi/src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/",
+            "Vitis\\RestDB\\Core\\Tests\\": "packages/core/tests/",
+            "Vitis\\RestDB\\JsonApi\\Tests\\": "packages/jsonapi/tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest",
+        "analyse": "vendor/bin/phpstan analyse",
+        "format": "vendor/bin/pint",
+        "monorepo:validate": "vendor/bin/monorepo-builder validate",
+        "monorepo:merge": "vendor/bin/monorepo-builder merge"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
