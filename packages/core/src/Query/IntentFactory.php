@@ -1,0 +1,323 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Vitis\RestDB\Query;
+
+use Illuminate\Contracts\Database\Query\Expression;
+use Vitis\RestDB\Capabilities\Capability;
+use Vitis\RestDB\Capabilities\CapabilityGate;
+use Vitis\RestDB\Capabilities\Operator;
+use Vitis\RestDB\Connection\RestConnection;
+use Vitis\RestDB\Exceptions\UnsupportedQueryException;
+use Vitis\RestDB\Values\Condition;
+use Vitis\RestDB\Values\FilterGroup;
+use Vitis\RestDB\Values\Order;
+use Vitis\RestDB\Values\PageRequest;
+use Vitis\RestDB\Values\SelectIntent;
+
+/**
+ * Normalizes builder state into an immutable SelectIntent. This is phase 2 of
+ * capability enforcement: the where-type whitelist re-validates everything,
+ * catching wheres injected by relations, global scopes, packages, or future
+ * framework where-types. A dropped where is a data-exposure bug — anything
+ * outside the whitelist throws.
+ */
+final class IntentFactory
+{
+    /** Where types this driver knows how to translate. Anything else throws. */
+    private const WHERE_TYPES = ['Basic', 'In', 'NotIn', 'Null', 'NotNull', 'between', 'Nested'];
+
+    public static function select(Builder $builder, ?int $forcedLimit = null): SelectIntent
+    {
+        $connection = $builder->getConnection();
+        \assert($connection instanceof RestConnection);
+
+        $gate = $connection->gate();
+        $model = $builder->getModelContext();
+
+        $gate->ensure(Capability::Select, 'get', $model);
+
+        $resource = self::resource($builder);
+        $filters = self::mapWheres($builder->wheres, $gate, $model);
+
+        if ($filters->hasNestedGroups()) {
+            $gate->ensure(Capability::FilterNested, 'where', $model);
+        }
+
+        if ($filters->hasOrBoolean()) {
+            $gate->ensure(Capability::FilterOr, 'orWhere', $model);
+        }
+
+        return new SelectIntent(
+            resource: $resource,
+            columns: self::columns($builder, $gate, $model),
+            filters: $filters,
+            orders: self::orders($builder, $gate, $model),
+            page: self::page($builder, $gate, $model, $forcedLimit),
+            aggregate: self::aggregate($builder, $gate, $model),
+        );
+    }
+
+    private static function resource(Builder $builder): string
+    {
+        $from = $builder->from;
+
+        if (! is_string($from)) {
+            throw UnsupportedQueryException::rawExpression('from');
+        }
+
+        if (preg_match('/\s/', $from) === 1) {
+            throw UnsupportedQueryException::aliasedTable($from);
+        }
+
+        return $from;
+    }
+
+    /** @param array<mixed> $wheres */
+    private static function mapWheres(array $wheres, CapabilityGate $gate, ?string $model): FilterGroup
+    {
+        $items = [];
+
+        foreach ($wheres as $where) {
+            if (! is_array($where)) {
+                throw UnsupportedQueryException::whereType(get_debug_type($where));
+            }
+
+            $type = is_string($where['type'] ?? null) ? $where['type'] : 'unknown';
+
+            if (! in_array($type, self::WHERE_TYPES, true)) {
+                throw UnsupportedQueryException::whereType($type);
+            }
+
+            $boolean = is_string($where['boolean'] ?? null) ? $where['boolean'] : 'and';
+
+            if ($type === 'Nested') {
+                $query = $where['query'] ?? null;
+
+                if (! $query instanceof \Illuminate\Database\Query\Builder) {
+                    throw UnsupportedQueryException::whereType('Nested');
+                }
+
+                $group = self::mapWheres($query->wheres, $gate, $model);
+
+                // A pure-AND nested group under an AND boolean is flattenable —
+                // key-value array wheres should not demand filter.nested.
+                if ($boolean === 'and' && ! $group->hasOrBoolean() && ! $group->hasNestedGroups()) {
+                    $items = [...$items, ...$group->items];
+                } else {
+                    $items[] = new FilterGroup($group->items, $boolean);
+                }
+
+                continue;
+            }
+
+            $items[] = self::condition($type, $where, $boolean, $gate, $model);
+        }
+
+        return new FilterGroup($items);
+    }
+
+    /** @param array<mixed> $where */
+    private static function condition(string $type, array $where, string $boolean, CapabilityGate $gate, ?string $model): Condition
+    {
+        $column = self::column($where['column'] ?? null);
+        $qualified = str_contains($column, '.');
+
+        if ($qualified) {
+            $column = substr((string) strrchr($column, '.'), 1);
+        }
+
+        [$operator, $value] = match ($type) {
+            'Basic' => self::basic($where),
+            'In' => [Operator::In, self::scalarList($where['values'] ?? [], 'whereIn')],
+            'NotIn' => [Operator::NotIn, self::scalarList($where['values'] ?? [], 'whereNotIn')],
+            'Null' => [Operator::Null, null],
+            'NotNull' => [Operator::NotNull, null],
+            'between' => self::between($where),
+            default => throw UnsupportedQueryException::whereType($type),
+        };
+
+        // Qualified equality wheres are how lazy relation loading arrives
+        // (belongsTo/hasMany constraints) — rewrite to In so they batch.
+        if ($qualified && $operator === Operator::Eq) {
+            $operator = Operator::In;
+            $value = [$value];
+        }
+
+        $gate->ensureOperator($operator, 'where', $model);
+
+        return new Condition($column, $operator, $value, $boolean);
+    }
+
+    /**
+     * @param  array<mixed>  $where
+     * @return array{Operator, mixed}
+     */
+    private static function basic(array $where): array
+    {
+        $sqlOperator = is_string($where['operator'] ?? null) ? $where['operator'] : '=';
+        $operator = Operator::fromSqlOperator($sqlOperator)
+            ?? throw UnsupportedQueryException::sqlOperator($sqlOperator);
+
+        $value = $where['value'] ?? null;
+
+        if ($value instanceof Expression) {
+            throw UnsupportedQueryException::rawExpression('a where value');
+        }
+
+        return [$operator, $value];
+    }
+
+    /**
+     * @param  array<mixed>  $where
+     * @return array{Operator, mixed}
+     */
+    private static function between(array $where): array
+    {
+        if (($where['not'] ?? false) === true) {
+            throw UnsupportedQueryException::notBetween();
+        }
+
+        return [Operator::Between, self::scalarList($where['values'] ?? [], 'whereBetween')];
+    }
+
+    /** @return list<mixed> */
+    private static function scalarList(mixed $values, string $context): array
+    {
+        if (! is_array($values)) {
+            throw UnsupportedQueryException::whereType($context);
+        }
+
+        foreach ($values as $value) {
+            if ($value instanceof Expression) {
+                throw UnsupportedQueryException::rawExpression($context);
+            }
+        }
+
+        return array_values($values);
+    }
+
+    private static function column(mixed $column): string
+    {
+        if ($column instanceof Expression || ! is_string($column)) {
+            throw UnsupportedQueryException::rawExpression('a where column');
+        }
+
+        return $column;
+    }
+
+    /** @return list<string>|null */
+    private static function columns(Builder $builder, CapabilityGate $gate, ?string $model): ?array
+    {
+        $columns = $builder->columns;
+
+        if ($columns === null || $columns === ['*']) {
+            return null;
+        }
+
+        $names = [];
+
+        foreach ($columns as $column) {
+            if (! is_string($column)) {
+                throw UnsupportedQueryException::rawExpression('select()');
+            }
+
+            if (preg_match('/\s/', $column) === 1) {
+                throw UnsupportedQueryException::rawExpression("select() column [{$column}]");
+            }
+
+            $names[] = $column;
+        }
+
+        // Explicit select() was eager-gated; internal projections (pluck, value)
+        // are only sent when the API can honor them. Omitting the projection is
+        // safe — the API returns a superset and the caller plucks client-side.
+        if (! $gate->allows(Capability::Columns)) {
+            if ($builder->explicitColumns()) {
+                $gate->ensure(Capability::Columns, 'select', $model);
+            }
+
+            return null;
+        }
+
+        return $names;
+    }
+
+    /** @return list<Order> */
+    private static function orders(Builder $builder, CapabilityGate $gate, ?string $model): array
+    {
+        $orders = [];
+
+        foreach ($builder->orders ?? [] as $order) {
+            if (! is_array($order) || ! isset($order['column'])) {
+                throw UnsupportedQueryException::whereType('Raw order');
+            }
+
+            $column = $order['column'];
+
+            if ($column instanceof Expression || ! is_string($column)) {
+                throw UnsupportedQueryException::rawExpression('orderBy()');
+            }
+
+            $direction = $order['direction'] ?? 'asc';
+
+            $orders[] = new Order($column, is_string($direction) ? $direction : 'asc');
+        }
+
+        if ($orders !== []) {
+            $gate->ensure(Capability::Sort, 'orderBy', $model);
+        }
+
+        if (count($orders) > 1) {
+            $gate->ensure(Capability::MultiSort, 'orderBy', $model);
+        }
+
+        return $orders;
+    }
+
+    private static function page(Builder $builder, CapabilityGate $gate, ?string $model, ?int $forcedLimit): ?PageRequest
+    {
+        $limit = $builder->limit;
+        $offset = $builder->offset;
+
+        if ($limit !== null) {
+            $gate->ensure(Capability::Limit, 'limit', $model);
+        }
+
+        if ($offset !== null) {
+            $gate->ensure(Capability::Offset, 'offset', $model);
+        }
+
+        // An internal probe limit (exists()) is not the developer's limit() —
+        // it is applied without a gate; the drain loop trims client-side.
+        if ($forcedLimit !== null) {
+            $limit = $limit === null ? $forcedLimit : min($limit, $forcedLimit);
+        }
+
+        if ($limit === null && $offset === null) {
+            return null;
+        }
+
+        return new PageRequest(limit: $limit, offset: $offset);
+    }
+
+    private static function aggregate(Builder $builder, CapabilityGate $gate, ?string $model): ?string
+    {
+        $aggregate = $builder->aggregate;
+
+        if ($aggregate === null) {
+            return null;
+        }
+
+        $function = $aggregate['function'];
+
+        if ($function !== 'count') {
+            throw UnsupportedQueryException::aggregate($function);
+        }
+
+        $gate->ensure(Capability::Count, 'count', $model);
+
+        return $function;
+    }
+}

@@ -7,3 +7,9 @@ parameters:
         - packages/contracts/src
         - packages/core/src
         - packages/jsonapi/src
+    ignoreErrors:
+        # The model trait is consumed by applications, not by package code;
+        # it is exercised by the test suite, which phpstan does not analyse.
+        -
+            identifier: trait.unused
+            path: packages/core/src/Eloquent/InteractsWithRestApi.php

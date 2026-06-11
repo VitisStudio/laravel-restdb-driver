@@ -34,9 +34,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Tests\\": "tests/",
-            "Vitis\\RestDB\\Core\\Tests\\": "packages/core/tests/",
-            "Vitis\\RestDB\\JsonApi\\Tests\\": "packages/jsonapi/tests/"
+            "Tests\\": "tests/"
         }
     },
     "scripts": {

@@ -4,7 +4,8 @@
     "license": "MIT",
     "keywords": ["laravel", "eloquent", "rest", "api", "driver", "contracts"],
     "require": {
-        "php": "^8.2"
+        "php": "^8.2",
+        "illuminate/http": "^11.0||^12.0"
     },
     "autoload": {
         "psr-4": {
