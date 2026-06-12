@@ -1,5 +1,39 @@
 # Progress Log
 
+## G7 — Hardening ✅ (all goals complete)
+
+**Shipped**
+- **Version-drift canary**: reflection test diffing
+  `Illuminate\Database\Query\Builder`'s 260 public methods (Laravel 12.x)
+  against an audited allowlist — CI fails naming any new surface until it is
+  gated, throw-listed, or confirmed to funnel into a gated path.
+- **Octane suite**: two connections in one process with different capability
+  sets — zero cross-talk, instance-state-only proven (plus the OAuth2
+  token-isolation test from G2); purged connections carry no stale state.
+  A source scan asserts no static properties exist in any package class.
+- **Adapter conformance kit** (`Vitis\RestDB\Testing\AdapterConformanceKit`):
+  executable definition of a valid adapter — EmptyResult for provably-empty
+  queries, usable compiled requests, single-resource writes, error/row
+  parsing, drain termination. Runs against the JSON:API adapter (both
+  dialects × all three paginators) and the generic adapter. It immediately
+  caught the test fixture compiler skipping the EmptyResult contract.
+- READMEs: root (quick start, capability model, commands) + one per package.
+
+**Deferred from the v1.0 wishlist** (documented, not silently skipped)
+- Capability *provenance* in exception messages (which layer granted/denied)
+  — needs CapabilitySet to carry source labels; clean follow-up.
+- JSON:API relationship writes (attach/detach/sync) — from G5.
+- Native page[cursor] streaming for cursorPaginate — from G5.
+- Strict mode cross-checking echoed params/links.self (plan's own v1.0
+  stretch goal for the capability-drift risk).
+
+**Final state**: 153 tests / 510 assertions, Larastan level max clean, Pint
+clean, monorepo validate clean. Contracts are exercised by two adapters and
+the conformance kit; the JSON:API adapter is built through public contracts
+alone (enforced by arch tests + composer boundaries).
+
+
+
 ## G6 — Codegen + discovery ✅
 
 **Shipped**

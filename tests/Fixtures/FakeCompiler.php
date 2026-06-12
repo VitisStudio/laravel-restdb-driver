@@ -26,6 +26,10 @@ final class FakeCompiler implements RequestCompiler
 
     public function compileSelect(SelectIntent $intent): CompiledRequest|EmptyResult
     {
+        if ($intent->provablyEmpty()) {
+            return new EmptyResult;
+        }
+
         $query = $this->filters($intent->filters);
 
         if ($intent->orders !== []) {
