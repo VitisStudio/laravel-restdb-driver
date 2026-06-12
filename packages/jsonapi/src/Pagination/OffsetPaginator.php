@@ -31,4 +31,19 @@ final class OffsetPaginator extends AbstractJsonApiPaginator
 
         return $params === [] ? $request : $request->withQuery($params);
     }
+
+    protected function totalBasedNext(CompiledRequest $current, int $total): ?CompiledRequest
+    {
+        $limit = self::intParam($current, 'page[limit]');
+
+        if ($limit === null) {
+            return null; // unpaginated — the server returned everything
+        }
+
+        $offset = self::intParam($current, 'page[offset]') ?? 0;
+
+        return $offset + $limit < $total
+            ? $current->withQuery(['page[offset]' => (string) ($offset + $limit)])
+            : null;
+    }
 }

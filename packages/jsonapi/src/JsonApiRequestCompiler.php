@@ -23,10 +23,12 @@ final class JsonApiRequestCompiler implements RequestCompiler
 {
     private const MEDIA_TYPE = 'application/vnd.api+json';
 
+    /** @param array<string, string> $resourceTypes resource (table) => type member override */
     public function __construct(
         private readonly ResolvesEndpoints $endpoints,
         private readonly FilterDialect $dialect,
         private readonly NameMapper $names,
+        private readonly array $resourceTypes = [],
     ) {}
 
     public function compileSelect(SelectIntent $intent): CompiledRequest|EmptyResult
@@ -124,10 +126,14 @@ final class JsonApiRequestCompiler implements RequestCompiler
         );
     }
 
-    /** The resource type member: snake table name mapped to the API's style. */
+    /**
+     * The resource type member: an explicit resource_types override (servers
+     * like hatchify demand their schema name, e.g. 'authors' => 'Author'),
+     * else the snake table name mapped to the API's style.
+     */
     private function resourceType(string $resource): string
     {
-        return $this->names->toApi($resource);
+        return $this->resourceTypes[$resource] ?? $this->names->toApi($resource);
     }
 
     /** URL segment for the resource — same mapping by convention. */

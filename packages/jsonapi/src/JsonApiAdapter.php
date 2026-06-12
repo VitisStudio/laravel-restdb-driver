@@ -18,6 +18,7 @@ use Vitis\RestDB\Contracts\SpecParser;
 use Vitis\RestDB\Endpoints\ConventionEndpointResolver;
 use Vitis\RestDB\Exceptions\InvalidConfigurationException;
 use Vitis\RestDB\JsonApi\Dialects\CommaListDialect;
+use Vitis\RestDB\JsonApi\Dialects\DollarOperatorDialect;
 use Vitis\RestDB\JsonApi\Dialects\NestedOperatorDialect;
 use Vitis\RestDB\JsonApi\Pagination\CursorPaginator;
 use Vitis\RestDB\JsonApi\Pagination\OffsetPaginator;
@@ -46,6 +47,7 @@ final class JsonApiAdapter implements Adapter
             $this->endpoints($config),
             $this->dialect($config),
             $this->names($config),
+            $this->resourceTypes($config),
         );
     }
 
@@ -127,11 +129,26 @@ final class JsonApiAdapter implements Adapter
         return match ($dialect) {
             'comma-list' => new CommaListDialect($this->names($config)),
             'nested-operator' => new NestedOperatorDialect($this->names($config)),
+            'dollar-operator' => new DollarOperatorDialect($this->names($config)),
             default => throw InvalidConfigurationException::missing(
-                "filter_dialect ('comma-list', 'nested-operator', or a FilterDialect class)",
+                "filter_dialect ('comma-list', 'nested-operator', 'dollar-operator', or a FilterDialect class)",
                 $config->name,
             ),
         };
+    }
+
+    /** @return array<string, string> */
+    private function resourceTypes(ConnectionConfig $config): array
+    {
+        $types = [];
+
+        foreach (ConnectionConfig::stringKeyed($config->get('resource_types')) as $resource => $type) {
+            if (is_string($type) && $type !== '') {
+                $types[$resource] = $type;
+            }
+        }
+
+        return $types;
     }
 
     private function names(ConnectionConfig $config): NameMapper

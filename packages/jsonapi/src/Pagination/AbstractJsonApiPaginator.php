@@ -14,7 +14,10 @@ use Vitis\RestDB\Values\ResultPage;
 /**
  * Shared JSON:API pagination behavior. links.next is the portable has-more
  * signal and is followed verbatim; totals exist only when a meta_total path
- * is configured — the spec does not define them.
+ * is configured — the spec does not define them. Servers that omit links
+ * entirely (hatchify, among others) still drain fully when a meta total is
+ * configured: the strategy computes the next page from the current request —
+ * a missing links object must never silently truncate a result set.
  */
 abstract class AbstractJsonApiPaginator implements Paginator
 {
@@ -54,12 +57,30 @@ abstract class AbstractJsonApiPaginator implements Paginator
 
     public function nextRequest(CompiledRequest $current, PageInfo $info): ?CompiledRequest
     {
-        if ($info->nextUrl === null) {
-            return null;
+        if ($info->nextUrl !== null) {
+            // Followed verbatim — the server owns the shape of its next link.
+            return new CompiledRequest('GET', $info->nextUrl, [], null, $current->headers);
         }
 
-        // Followed verbatim — the server owns the shape of its next link.
-        return new CompiledRequest('GET', $info->nextUrl, [], null, $current->headers);
+        return $info->total === null ? null : $this->totalBasedNext($current, $info->total);
+    }
+
+    /**
+     * Compute the next page from the current request when the server sent a
+     * total but no links. Null = not computable for this strategy (cursor) or
+     * the total is drained.
+     */
+    protected function totalBasedNext(CompiledRequest $current, int $total): ?CompiledRequest
+    {
+        return null;
+    }
+
+    /** A positive integer query param off the current request, or null. */
+    protected static function intParam(CompiledRequest $request, string $param): ?int
+    {
+        $value = $request->query[$param] ?? null;
+
+        return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
     }
 
     /** @param array<mixed> $json */
