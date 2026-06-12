@@ -14,12 +14,17 @@ use Vitis\RestDB\Contracts\ResponseParser;
 use Vitis\RestDB\Contracts\SpecParser;
 use Vitis\RestDB\Endpoints\ConventionEndpointResolver;
 use Vitis\RestDB\Exceptions\InvalidConfigurationException;
+use Vitis\RestDB\Rest\JsonResponseParser;
+use Vitis\RestDB\Rest\QueryParamPaginator;
+use Vitis\RestDB\Rest\RestRequestCompiler;
 use Vitis\RestDB\Values\ConnectionConfig;
 
 /**
- * The "talk to any REST API" layer: the user hand-crafts a RequestCompiler and
- * ResponseParser per API and declares its capabilities in config. The baseline
- * is NONE — nothing works until declared.
+ * The "talk to any REST API" layer. Config (usually a preset) shapes the
+ * default compiler, parser, and paginator; a connection may swap any piece
+ * for its own class when the API outgrows configuration. The capability
+ * baseline is NONE — nothing works until declared (presets declare what
+ * their named server framework honors).
  */
 final class GenericAdapter implements Adapter
 {
@@ -32,21 +37,33 @@ final class GenericAdapter implements Adapter
 
     public function compiler(ConnectionConfig $config): RequestCompiler
     {
+        if ($config->get('compiler') === null) {
+            return new RestRequestCompiler($this->endpoints($config), $config);
+        }
+
         return $this->strategy($config, 'compiler', RequestCompiler::class);
     }
 
     public function parser(ConnectionConfig $config): ResponseParser
     {
+        if ($config->get('parser') === null) {
+            return new JsonResponseParser($config);
+        }
+
         return $this->strategy($config, 'parser', ResponseParser::class);
     }
 
     public function paginator(ConnectionConfig $config): Paginator
     {
-        if ($config->get('paginator') === null) {
-            return new NullPaginator;
+        if ($config->get('paginator') !== null) {
+            return $this->strategy($config, 'paginator', Paginator::class);
         }
 
-        return $this->strategy($config, 'paginator', Paginator::class);
+        if (is_array($config->get('pagination'))) {
+            return new QueryParamPaginator($config);
+        }
+
+        return new NullPaginator;
     }
 
     public function endpoints(ConnectionConfig $config): ResolvesEndpoints

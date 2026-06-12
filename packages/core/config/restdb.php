@@ -22,6 +22,32 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Wire-format presets
+    |--------------------------------------------------------------------------
+    |
+    | name => connection-config fragment for the generic adapter. A connection
+    | opts in with 'preset' => 'name'; its own keys always win over the preset.
+    | Presets here win over built-ins ('json-server') of the same name. A
+    | preset bundles the wire format AND a capabilities block declaring what
+    | the named server framework actually honors:
+    |
+    | 'my-legacy-api' => [
+    |     'filters'    => ['style' => 'suffix'],            // age_gte=18
+    |     'sort'       => ['param' => 'sort'],              // sort=-createdAt
+    |     'pagination' => [
+    |         'params'     => ['page' => 'page', 'limit' => 'per_page'],
+    |         'total_path' => 'meta.total',
+    |     ],
+    |     'response'     => ['data' => 'data'],             // {"data": [...]}
+    |     'capabilities' => ['select' => true, 'sort' => true, ...],
+    | ],
+    |
+    */
+
+    'presets' => [],
+
+    /*
+    |--------------------------------------------------------------------------
     | Auth driver registry
     |--------------------------------------------------------------------------
     |

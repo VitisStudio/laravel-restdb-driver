@@ -12,6 +12,7 @@ use Vitis\RestDB\Connection\RestConnection;
 use Vitis\RestDB\Exceptions\InvalidConfigurationException;
 use Vitis\RestDB\Http\HttpOptions;
 use Vitis\RestDB\Http\Transport;
+use Vitis\RestDB\Rest\Presets;
 use Vitis\RestDB\Values\ConnectionConfig;
 
 /**
@@ -35,6 +36,7 @@ final class RestConnectionFactory
         $config['name'] ??= $name;
         $config['prefix'] ??= '';
 
+        $config = $this->applyPreset($config, $name);
         $config = $this->mergePackageDefaults($config);
         $connectionConfig = new ConnectionConfig($name, $config);
 
@@ -97,6 +99,41 @@ final class RestConnectionFactory
         }
 
         return $registry;
+    }
+
+    /**
+     * Expand a named wire-format preset into the connection array. Declared
+     * connection keys always win; user presets in config('restdb.presets')
+     * win over built-ins of the same name.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function applyPreset(array $config, string $name): array
+    {
+        $preset = $config['preset'] ?? null;
+
+        if ($preset === null) {
+            return $config;
+        }
+
+        if (! is_string($preset)) {
+            throw InvalidConfigurationException::missing('preset (a preset name string)', $name);
+        }
+
+        $userPresets = ConnectionConfig::stringKeyed($this->appConfig->get('restdb.presets'));
+        $definition = $userPresets[$preset] ?? Presets::builtIn()[$preset] ?? null;
+
+        if (! is_array($definition)) {
+            throw InvalidConfigurationException::unknownPreset(
+                $preset,
+                $name,
+                [...array_keys(Presets::builtIn()), ...array_keys($userPresets)],
+            );
+        }
+
+        /** @var array<string, mixed> $definition */
+        return Presets::merge($definition, $config);
     }
 
     /**

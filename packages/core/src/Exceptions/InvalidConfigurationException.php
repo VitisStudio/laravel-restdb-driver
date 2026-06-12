@@ -32,6 +32,16 @@ final class InvalidConfigurationException extends RuntimeException implements Re
         );
     }
 
+    /** @param list<string> $available */
+    public static function unknownPreset(string $preset, string $connection, array $available): self
+    {
+        return new self(
+            "Connection [{$connection}]: unknown preset [{$preset}]. Available presets: "
+            .implode(', ', array_unique($available)).'. Define custom presets in '
+            ."config/restdb.php under 'presets'.",
+        );
+    }
+
     public static function unknownAuthDriver(string $driver, string $connection): self
     {
         return new self(

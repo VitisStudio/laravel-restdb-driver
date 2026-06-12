@@ -13,6 +13,7 @@ $coreInternals = [
     'Vitis\RestDB\Http',
     'Vitis\RestDB\Auth',
     'Vitis\RestDB\Adapters',
+    'Vitis\RestDB\Rest',
     'Vitis\RestDB\Endpoints',
     'Vitis\RestDB\Exceptions',
     'Vitis\RestDB\Commands',
