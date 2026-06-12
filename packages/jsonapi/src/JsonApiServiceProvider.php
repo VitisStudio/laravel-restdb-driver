@@ -12,7 +12,11 @@ final class JsonApiServiceProvider extends PackageServiceProvider
 {
     public function configurePackage(Package $package): void
     {
-        $package->name('restdb-jsonapi');
+        $package
+            ->name('restdb-jsonapi')
+            ->hasCommands([
+                Commands\MakeModelsCommand::class,
+            ]);
     }
 
     public function packageRegistered(): void

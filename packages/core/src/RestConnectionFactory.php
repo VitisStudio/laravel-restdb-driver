@@ -52,11 +52,16 @@ final class RestConnectionFactory
         $paginator = $adapter->paginator($connectionConfig);
 
         // Effective capabilities, lowest to highest precedence: adapter
-        // baseline -> paginator contributions -> declared connection config
-        // (additive and subtractive). Model-level narrowing happens at query
+        // baseline -> paginator contributions -> discovered manifest (advisory,
+        // additive only) -> declared connection config (additive and
+        // subtractive — always wins). Model-level narrowing happens at query
         // time and may only drop, never grant.
         $capabilities = $adapter->capabilities($connectionConfig)
             ->with(...$paginator->provides());
+
+        $capabilities = $capabilities->applyConfig(
+            Commands\DiscoverCommand::manifestCapabilities($this->appConfig, $name),
+        );
 
         $capabilities = $capabilities->applyConfig(
             ConnectionConfig::stringKeyed($connectionConfig->get('capabilities')),

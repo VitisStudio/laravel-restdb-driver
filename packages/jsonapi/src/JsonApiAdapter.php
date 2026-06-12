@@ -107,9 +107,9 @@ final class JsonApiAdapter implements Adapter
         )->withOperators(...$operators);
     }
 
-    public function specParser(): ?SpecParser
+    public function specParser(): SpecParser
     {
-        return null; // restdb:discover arrives in v0.6
+        return new JsonApiSpecParser;
     }
 
     private function dialect(ConnectionConfig $config): FilterDialect

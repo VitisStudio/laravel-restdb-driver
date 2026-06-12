@@ -1,0 +1,96 @@
+{
+    "openapi": "3.1.0",
+    "info": { "title": "CRM API", "version": "1.0.0" },
+    "paths": {
+        "/posts": {
+            "get": {
+                "parameters": [
+                    { "name": "filter[status]", "in": "query", "schema": { "type": "string" } },
+                    { "name": "filter[id]", "in": "query", "schema": { "type": "string" } },
+                    { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["createdAt", "-createdAt", "title"] } },
+                    { "name": "include", "in": "query", "schema": { "type": "string" } },
+                    { "name": "fields[posts]", "in": "query", "schema": { "type": "string" } },
+                    { "name": "page[number]", "in": "query", "schema": { "type": "integer" } },
+                    { "name": "page[size]", "in": "query", "schema": { "type": "integer" } }
+                ]
+            }
+        },
+        "/people": {
+            "get": { "parameters": [] }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Post": {
+                "type": "object",
+                "properties": {
+                    "type": { "type": "string", "enum": ["posts"] },
+                    "id": { "type": "string" },
+                    "attributes": {
+                        "type": "object",
+                        "properties": {
+                            "title": { "type": "string" },
+                            "viewCount": { "type": "integer" },
+                            "publishedAt": { "type": "string", "format": "date-time" },
+                            "featured": { "type": "boolean" }
+                        }
+                    },
+                    "relationships": {
+                        "type": "object",
+                        "properties": {
+                            "author": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "object",
+                                        "properties": {
+                                            "type": { "type": "string", "enum": ["people"] },
+                                            "id": { "type": "string" }
+                                        }
+                                    }
+                                }
+                            },
+                            "comments": {
+                                "type": "object",
+                                "properties": {
+                                    "data": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "type": { "type": "string", "enum": ["comments"] },
+                                                "id": { "type": "string" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Person": {
+                "type": "object",
+                "properties": {
+                    "type": { "type": "string", "enum": ["people"] },
+                    "id": { "type": "string" },
+                    "attributes": {
+                        "type": "object",
+                        "properties": { "name": { "type": "string" } }
+                    }
+                }
+            },
+            "Comment": {
+                "type": "object",
+                "properties": {
+                    "type": { "type": "string", "enum": ["comments"] },
+                    "id": { "type": "string" },
+                    "attributes": {
+                        "type": "object",
+                        "properties": { "body": { "type": "string" } }
+                    }
+                }
+            }
+        }
+    }
+}

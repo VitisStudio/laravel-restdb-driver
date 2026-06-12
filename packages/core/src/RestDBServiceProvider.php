@@ -19,7 +19,11 @@ final class RestDBServiceProvider extends PackageServiceProvider
     {
         $package
             ->name('restdb')
-            ->hasConfigFile();
+            ->hasConfigFile()
+            ->hasCommands([
+                Commands\CapabilitiesCommand::class,
+                Commands\DiscoverCommand::class,
+            ]);
     }
 
     public function packageRegistered(): void

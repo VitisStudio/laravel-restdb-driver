@@ -1,5 +1,32 @@
 # Progress Log
 
+## G6 — Codegen + discovery ✅
+
+**Shipped**
+- `restdb:make-models {connection} --spec= --path= --namespace= [--force]`
+  (jsonapi package): one physical class per resource type — IsJsonApiResource
+  trait, $connection, $table, $casts from schema types
+  (integer/number/boolean/date-time/array), belongsTo/hasMany methods from
+  spec relationships (skipped with a comment when the target resource is not
+  in the spec), @property docblock. Skips existing files without --force —
+  edited classes stay byte-identical. Generated files lint clean and run end
+  to end against the fake API in tests.
+- `restdb:discover {connection} --spec= [--check]` (core, adapter-supplied
+  SpecParser): writes a committed manifest
+  ({manifest_path|database/restdb}/{connection}.json) of capabilities +
+  per-resource attributes/relationships/filters; --check fails CI on a stale
+  manifest. `JsonApiSpecParser` reads OpenAPI documents following JSON:API
+  conventions (type enums in components.schemas, filter[x]/sort/include/
+  fields[]/page[*] parameters).
+- Runtime manifest consumption: factory layers manifest capabilities between
+  the paginator and declared config — advisory and additive only (grants
+  pass, denials are stripped); declared config always wins, proven by a test
+  that subtracts a manifest-granted capability.
+- `restdb:capabilities {connection}` prints the effective capability matrix
+  and granted filter operators.
+
+
+
 ## G5 — Advanced queries ✅
 
 **Shipped**
