@@ -145,8 +145,12 @@ class Builder extends \Illuminate\Database\Query\Builder
 
     public function whereNull($columns, $boolean = 'and', $not = false)
     {
-        $method = ($this->isOr($boolean) ? 'orWhere' : 'where').($not ? 'NotNull' : 'Null');
-        $this->gate()->ensureOperator($not ? Operator::NotNull : Operator::Null, $method, $this->modelContext);
+        // Relations constrain `fk = ?` AND `fk IS NOT NULL`; the NotNull is
+        // implied and pruned at compile time — don't demand the operator here.
+        if (! ($not && ! $this->isOr($boolean) && $this->hasNonNullEqualityOn($columns))) {
+            $method = ($this->isOr($boolean) ? 'orWhere' : 'where').($not ? 'NotNull' : 'Null');
+            $this->gate()->ensureOperator($not ? Operator::NotNull : Operator::Null, $method, $this->modelContext);
+        }
 
         return parent::whereNull($columns, $boolean, $not);
     }
@@ -535,14 +539,28 @@ class Builder extends \Illuminate\Database\Query\Builder
         $this->unsupported('whereYear');
     }
 
-    public function whereIntegerInRaw($column, $values, $boolean = 'and', $not = false): never
+    /**
+     * Eloquent relations use this as an integer-key whereIn optimization
+     * ("raw" only in the SQL-binding sense) — route it through the gated
+     * whereIn so eager loading works like any other In condition.
+     *
+     * @param  array<mixed>  $values
+     */
+    public function whereIntegerInRaw($column, $values, $boolean = 'and', $not = false)
     {
-        $this->unsupported('whereIntegerInRaw');
+        $integers = [];
+
+        foreach ($values as $value) {
+            $integers[] = (int) (is_scalar($value) ? $value : throw UnsupportedQueryException::rawExpression('whereIntegerInRaw'));
+        }
+
+        return $this->whereIn($column, $integers, $boolean, $not);
     }
 
-    public function whereIntegerNotInRaw($column, $values, $boolean = 'and'): never
+    /** @param array<mixed> $values */
+    public function whereIntegerNotInRaw($column, $values, $boolean = 'and')
     {
-        $this->unsupported('whereIntegerNotInRaw');
+        return $this->whereIntegerInRaw($column, $values, $boolean, true);
     }
 
     public function whereAll($columns, $operator = null, $value = null, $boolean = 'and'): never
@@ -633,6 +651,48 @@ class Builder extends \Illuminate\Database\Query\Builder
     protected function isOr(string $boolean): bool
     {
         return str_contains(strtolower($boolean), 'or');
+    }
+
+    /** An AND-level equality/In with non-null values already constrains this column. */
+    protected function hasNonNullEqualityOn(mixed $columns): bool
+    {
+        if (! is_string($columns)) {
+            return false;
+        }
+
+        $name = str_contains($columns, '.') ? substr((string) strrchr($columns, '.'), 1) : $columns;
+
+        foreach ($this->wheres as $where) {
+            if (! is_array($where) || ($where['boolean'] ?? 'and') !== 'and') {
+                continue;
+            }
+
+            $column = $where['column'] ?? null;
+
+            if (! is_string($column)) {
+                continue;
+            }
+
+            $column = str_contains($column, '.') ? substr((string) strrchr($column, '.'), 1) : $column;
+
+            if ($column !== $name) {
+                continue;
+            }
+
+            if (($where['type'] ?? null) === 'Basic' && ($where['operator'] ?? null) === '=' && ($where['value'] ?? null) !== null) {
+                return true;
+            }
+
+            if (($where['type'] ?? null) === 'In') {
+                $values = is_array($where['values'] ?? null) ? $where['values'] : [];
+
+                if ($values !== [] && ! in_array(null, $values, true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

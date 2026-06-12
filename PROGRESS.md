@@ -1,5 +1,35 @@
 # Progress Log
 
+## Example app — Eloquent over live JSONPlaceholder ✅
+
+**Shipped** (`examples/jsonplaceholder`)
+- Minimal Laravel 12 console app wired to the monorepo via a path repository
+  (versions pinned so inter-package `^0.1` constraints resolve).
+- JSONPlaceholder is json-server, not JSON:API — so the example showcases the
+  generic adapter with three small classes (~150 lines): compiler
+  (`?userId=1&id_gte=5&_sort=…`), parser (bare arrays), paginator
+  (`_page`/`_limit`/`_start` + the `X-Total-Count` header, which contributes
+  page.total). A reference `crm` connection shows the zero-code json-api
+  adapter config. README explains the distinction.
+- `php artisan demo` runs five live sections — queries, pagination (ONE
+  request paginate/count off the header total, streaming lazy()), relations
+  (eager belongsTo, lazy hasMany, whereHas decomposition), writes (POST with
+  id 101 re-fill, dirty-only PATCH, DELETE), and the gate (orWhere/select/
+  multi-whereIn/groupBy all failing loudly). Every wire request prints via
+  DB::listen. Verified end to end against the real API, exit 0.
+
+**Core fixes the live API forced** (with regression tests, 157 total now)
+- `whereIntegerInRaw`/`whereIntegerNotInRaw` were hard-throw, but Eloquent
+  uses them as the integer-key eager-load optimization — now delegate to the
+  gated `whereIn`, so relations on int-key models work.
+- HasMany/HasOne constrain `fk = ?` AND `fk IS NOT NULL`; the NotNull is
+  logically implied, so demanding a `not-null` operator broke lazy loads.
+  IntentFactory now builds → prunes implied NotNulls → gates survivors, with
+  a matching eager-gate exemption. A developer's un-implied whereNotNull
+  still gates.
+
+
+
 ## G7 — Hardening ✅ (all goals complete)
 
 **Shipped**

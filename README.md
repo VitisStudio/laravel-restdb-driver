@@ -88,6 +88,17 @@ Inspect any connection with `php artisan restdb:capabilities crm`.
 | `restdb:discover {connection} --spec= [--check]` | Spec → committed capability manifest (advisory; `--check` for CI) |
 | `restdb:make-models {connection} --spec= [--path= --namespace= --force]` | Spec → physical Eloquent classes |
 
+## Example app
+
+[`examples/jsonplaceholder`](examples/jsonplaceholder) is a runnable Laravel
+app querying the **live** JSONPlaceholder API through Eloquent — filters,
+one-request pagination off the `X-Total-Count` header, relations, writes, and
+what fail-loud looks like:
+
+```bash
+cd examples/jsonplaceholder && composer install && php artisan demo
+```
+
 ## Development
 
 ```bash

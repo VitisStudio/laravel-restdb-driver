@@ -212,14 +212,75 @@ final class IntentFactory
                 continue;
             }
 
-            $items[] = self::condition($type, $where, $boolean, $gate, $model, $keyName, $gateOperators, $depth);
+            $items[] = self::condition($type, $where, $boolean);
+        }
+
+        // Prune before gating: an implied NotNull must never demand an operator.
+        $items = self::pruneImpliedNotNull($items);
+
+        if ($gateOperators) {
+            foreach ($items as $item) {
+                if (! $item instanceof Condition) {
+                    continue;
+                }
+
+                // Top-level AND primary-key equality is identity targeting,
+                // not a filter — exempt (mirrors the eager gate).
+                $identity = $depth === 0
+                    && $item->boolean === 'and'
+                    && $item->column === $keyName
+                    && in_array($item->operator, [Operator::Eq, Operator::In], true);
+
+                if (! $identity) {
+                    $gate->ensureOperator($item->operator, 'where', $model);
+                }
+            }
         }
 
         return new FilterGroup($items);
     }
 
+    /**
+     * Eloquent relations constrain `fk = ?` AND `fk IS NOT NULL` — the
+     * NotNull is logically implied by any equality/In on the same column with
+     * non-null values, so dropping it changes nothing. This is the one prune
+     * that is provably lossless; it spares connections from declaring a
+     * not-null operator just to lazy-load relations.
+     *
+     * @param  list<Condition|FilterGroup>  $items
+     * @return list<Condition|FilterGroup>
+     */
+    private static function pruneImpliedNotNull(array $items): array
+    {
+        $implied = [];
+
+        foreach ($items as $item) {
+            if (! $item instanceof Condition || $item->boolean !== 'and') {
+                continue;
+            }
+
+            $values = is_array($item->value) ? $item->value : [$item->value];
+
+            if (
+                in_array($item->operator, [Operator::Eq, Operator::In], true)
+                && $values !== []
+                && ! in_array(null, $values, true)
+            ) {
+                $implied[$item->column] = true;
+            }
+        }
+
+        return array_values(array_filter(
+            $items,
+            fn ($item) => ! ($item instanceof Condition
+                && $item->operator === Operator::NotNull
+                && $item->boolean === 'and'
+                && isset($implied[$item->column])),
+        ));
+    }
+
     /** @param array<mixed> $where */
-    private static function condition(string $type, array $where, string $boolean, CapabilityGate $gate, ?string $model, string $keyName, bool $gateOperators, int $depth): Condition
+    private static function condition(string $type, array $where, string $boolean): Condition
     {
         $column = self::column($where['column'] ?? null);
         $qualified = str_contains($column, '.');
@@ -243,17 +304,6 @@ final class IntentFactory
         if ($qualified && $operator === Operator::Eq) {
             $operator = Operator::In;
             $value = [$value];
-        }
-
-        // Top-level AND primary-key equality is identity targeting, not a
-        // filter — exempt from operator capabilities (mirrors the eager gate).
-        $identity = $depth === 0
-            && $boolean === 'and'
-            && $column === $keyName
-            && in_array($operator, [Operator::Eq, Operator::In], true);
-
-        if ($gateOperators && ! $identity) {
-            $gate->ensureOperator($operator, 'where', $model);
         }
 
         return new Condition($column, $operator, $value, $boolean);
