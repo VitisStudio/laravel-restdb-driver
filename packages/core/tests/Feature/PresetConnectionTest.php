@@ -148,6 +148,32 @@ it('rejects unknown presets with the available names', function () {
         ->toThrow(InvalidConfigurationException::class, 'json-server');
 });
 
+it('answers the base pagination count query through count emulation', function () {
+    definePresetConnection();
+    Http::fake(['*' => Http::response([['id' => 1]], 200, ['X-Total-Count' => '42'])]);
+
+    // Filament tables call toBase()->getCountForPagination() before paginating.
+    expect(Article::query()->toBase()->getCountForPagination())->toBe(42);
+});
+
+it('constructs relations on unsaved models without tripping the null-operator gate', function () {
+    definePresetConnection();
+    Http::fake(['*' => Http::response([])]);
+
+    // BelongsTo on an unset FK compiles where(id = null) -> whereNull(id).
+    // Filament builds these relation objects just to read metadata — the
+    // clause must not throw at construction…
+    $relation = (new Article)->author();
+
+    expect($relation->getResults())->toBeNull();
+
+    // …but an executed null filter still gates before any HTTP.
+    expect(fn () => Article::query()->whereNull('title')->get())
+        ->toThrow(UnsupportedCapabilityException::class, '[null]');
+
+    Http::assertNothingSent();
+});
+
 it('passes the adapter conformance kit on preset config alone', function () {
     $config = new ConnectionConfig('testapi', Presets::merge(
         Presets::builtIn()['json-server'],

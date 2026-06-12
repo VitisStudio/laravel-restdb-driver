@@ -6,3 +6,4 @@ composer.lock
 /coverage/
 .DS_Store
 node_modules/
+.playwright-mcp/

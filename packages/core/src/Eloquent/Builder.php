@@ -55,7 +55,7 @@ class Builder extends EloquentBuilder
      * @param  array<int, string>|string  $columns
      * @param  string  $pageName
      * @param  int|null  $page
-     * @param  int|null  $total
+     * @param  Closure|int|null  $total  caller-supplied total (Filament precomputes one) — used only when the response carries none
      */
     public function paginate($perPage = null, $columns = ['*'], $pageName = 'page', $page = null, $total = null)
     {
@@ -92,7 +92,8 @@ class Builder extends EloquentBuilder
 
         $results = $this->get($columns);
 
-        $total = $connection->lastPageInfo()?->total;
+        $provided = $total instanceof Closure ? $total() : $total;
+        $total = $connection->lastPageInfo()->total ?? (is_int($provided) ? $provided : null);
 
         if ($total === null) {
             throw new BadMethodCallException(

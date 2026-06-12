@@ -145,13 +145,12 @@ class Builder extends \Illuminate\Database\Query\Builder
 
     public function whereNull($columns, $boolean = 'and', $not = false)
     {
-        // Relations constrain `fk = ?` AND `fk IS NOT NULL`; the NotNull is
-        // implied and pruned at compile time — don't demand the operator here.
-        if (! ($not && ! $this->isOr($boolean) && $this->hasNonNullEqualityOn($columns))) {
-            $method = ($this->isOr($boolean) ? 'orWhere' : 'where').($not ? 'NotNull' : 'Null');
-            $this->gate()->ensureOperator($not ? Operator::NotNull : Operator::Null, $method, $this->modelContext);
-        }
-
+        // Gated at intent build (IntentFactory), not here. Null checks arrive
+        // from Eloquent plumbing on queries that never execute — BelongsTo
+        // constraints on an unset foreign key compile to whereNull(ownerKey),
+        // and relations constrain `fk = ?` AND `fk IS NOT NULL` whose NotNull
+        // is implied and pruned. Real null filters still throw before any
+        // HTTP, at execution instead of at this call site.
         return parent::whereNull($columns, $boolean, $not);
     }
 
@@ -306,11 +305,17 @@ class Builder extends \Illuminate\Database\Query\Builder
         );
     }
 
+    /**
+     * The base paginator's standalone count query (Filament tables and
+     * anything else calling getCountForPagination()) — answered through the
+     * same one-request count emulation as count().
+     *
+     * @param  array<int, string>|string  $columns
+     * @return list<array{aggregate: int}>
+     */
     protected function runPaginationCountQuery($columns = ['*'])
     {
-        throw new BadMethodCallException(
-            'paginate() requires meta totals (page.total) and lands in v0.5. Use simplePaginate(), lazy(), or get().',
-        );
+        return [['aggregate' => $this->count(is_array($columns) ? ($columns[0] ?? '*') : $columns)]];
     }
 
     /** @param array<mixed> $values */
@@ -651,48 +656,6 @@ class Builder extends \Illuminate\Database\Query\Builder
     protected function isOr(string $boolean): bool
     {
         return str_contains(strtolower($boolean), 'or');
-    }
-
-    /** An AND-level equality/In with non-null values already constrains this column. */
-    protected function hasNonNullEqualityOn(mixed $columns): bool
-    {
-        if (! is_string($columns)) {
-            return false;
-        }
-
-        $name = str_contains($columns, '.') ? substr((string) strrchr($columns, '.'), 1) : $columns;
-
-        foreach ($this->wheres as $where) {
-            if (! is_array($where) || ($where['boolean'] ?? 'and') !== 'and') {
-                continue;
-            }
-
-            $column = $where['column'] ?? null;
-
-            if (! is_string($column)) {
-                continue;
-            }
-
-            $column = str_contains($column, '.') ? substr((string) strrchr($column, '.'), 1) : $column;
-
-            if ($column !== $name) {
-                continue;
-            }
-
-            if (($where['type'] ?? null) === 'Basic' && ($where['operator'] ?? null) === '=' && ($where['value'] ?? null) !== null) {
-                return true;
-            }
-
-            if (($where['type'] ?? null) === 'In') {
-                $values = is_array($where['values'] ?? null) ? $where['values'] : [];
-
-                if ($values !== [] && ! in_array(null, $values, true)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     /**
