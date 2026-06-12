@@ -54,6 +54,14 @@ final class UnsupportedQueryException extends RuntimeException implements RestDB
         );
     }
 
+    public static function whereHasKeyCap(string $relation, int $max): self
+    {
+        return new self(
+            "whereHas('{$relation}') matched more than {$max} related keys (guards.where_has_max_keys). "
+            .'The decomposed whereIn would blow URL length limits. Narrow the relation query or raise the guard.',
+        );
+    }
+
     public static function massWrite(string $method): self
     {
         return new self(

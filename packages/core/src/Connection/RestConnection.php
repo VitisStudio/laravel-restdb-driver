@@ -28,6 +28,7 @@ use Vitis\RestDB\Values\ConnectionConfig;
 use Vitis\RestDB\Values\DeleteIntent;
 use Vitis\RestDB\Values\EmptyResult;
 use Vitis\RestDB\Values\InsertIntent;
+use Vitis\RestDB\Values\PageInfo;
 use Vitis\RestDB\Values\SelectIntent;
 use Vitis\RestDB\Values\UpdateIntent;
 use Vitis\RestDB\Values\WriteResult;
@@ -42,6 +43,8 @@ class RestConnection extends Connection
     private readonly CapabilityGate $capabilityGate;
 
     private ?WriteResult $lastWriteResult = null;
+
+    private ?PageInfo $lastPageInfo = null;
 
     /** @param array<string, mixed> $config */
     public function __construct(
@@ -159,6 +162,7 @@ class RestConnection extends Connection
         $maxPages = $this->maxPages();
         $rows = [];
         $pages = 0;
+        $this->lastPageInfo = null;
 
         do {
             if (++$pages > $maxPages) {
@@ -174,11 +178,12 @@ class RestConnection extends Connection
             $page = $this->parser->rows($response, $intent);
             $rows = array_merge($rows, $page->rows);
 
+            $info = $this->paginator->pageInfo($response, $page);
+            $this->lastPageInfo = $info;
+
             if ($intent->page?->limit !== null && count($rows) >= $intent->page->limit) {
                 break;
             }
-
-            $info = $this->paginator->pageInfo($response, $page);
         } while (($request = $this->paginator->nextRequest($request, $info)) !== null);
 
         if ($intent->page?->limit !== null) {
@@ -373,6 +378,12 @@ class RestConnection extends Connection
     public function lastWriteResult(): ?WriteResult
     {
         return $this->lastWriteResult;
+    }
+
+    /** Pagination metadata from the last select — powers one-request paginate() and count(). */
+    public function lastPageInfo(): ?PageInfo
+    {
+        return $this->lastPageInfo;
     }
 
     private function write(CompiledRequest $compiled, UpdateIntent|DeleteIntent $intent): int

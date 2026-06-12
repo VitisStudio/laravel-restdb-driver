@@ -1,5 +1,38 @@
 # Progress Log
 
+## G5 — Advanced queries ✅
+
+**Shipped**
+- `paginate()` issues exactly ONE request: page params on the wire
+  (page[number] or page[offset], capability-chosen), total read from the same
+  response via the configured `pagination.meta_total` path; gated on
+  page.total with a simplePaginate/cursorPaginate hint, and a cursor-only
+  connection points to cursorPaginate.
+- `count()` emulation, one request either way: adapters that answer count
+  intents return an aggregate row (generic fixture), otherwise a limit-1
+  probe reads the meta total (JSON:API).
+- `whereHas(relation, callback)` decomposition: inner relation query →
+  pluck/unique keys → outer whereIn; belongsTo/hasOne/hasMany; capped by
+  `guards.where_has_max_keys` (throws, never truncates); zero matches
+  short-circuits the outer query to zero HTTP via the provably-empty whereIn.
+  orWhereHas / counted has() / nested dots / withCount throw loudly.
+- `cursorPaginate()` works through the framework's cursor-condition
+  compilation — nested comparison filters ride the nested-operator dialect
+  with filter.nested + filter.or declared; page two carries
+  `filter[id][gt]=…`. Native page[cursor] streaming deferred (no framework
+  hook for server cursors in LengthAware-style pagination).
+- Connection exposes `lastPageInfo()`; drain computes page info before the
+  limit-break so single-page queries still observe totals.
+
+**Deferred**
+- JSON:API relationship writes (attach/detach/sync via
+  /relationships/{name} endpoints) — needs a pivot-less BelongsToMany story;
+  moved to the v0.6+ backlog rather than half-shipped.
+- `Model::withCount([])` is called by Eloquent on every query — the override
+  allows the empty call and throws for real usage.
+
+
+
 ## G4 — JSON:API adapter ✅
 
 **Shipped** (`packages/jsonapi`, registers itself via its own provider)

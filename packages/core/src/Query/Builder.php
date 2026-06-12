@@ -43,6 +43,9 @@ class Builder extends \Illuminate\Database\Query\Builder
      */
     public array $includes = [];
 
+    /** 1-based page for page-number strategies; gated on page.number. */
+    public ?int $pageNumber = null;
+
     public function setModelContext(?string $model): void
     {
         $this->modelContext = $model;
@@ -74,6 +77,7 @@ class Builder extends \Illuminate\Database\Query\Builder
         $query->modelContext = $this->modelContext;
         $query->keyName = $this->keyName;
         $query->includes = $this->includes;
+        $query->pageNumber = $this->pageNumber;
 
         return $query;
     }
@@ -261,6 +265,41 @@ class Builder extends \Illuminate\Database\Query\Builder
         $this->gate()->ensure(Capability::Count, 'count', $this->modelContext);
 
         return parent::aggregate($function, $columns);
+    }
+
+    /**
+     * Two emulation paths, both one request: an adapter that understands the
+     * count intent returns an 'aggregate' row; otherwise a limit-1 probe reads
+     * the total from pagination metadata (JSON:API meta totals).
+     */
+    public function count($columns = '*')
+    {
+        $this->gate()->ensure(Capability::Count, 'count', $this->modelContext);
+
+        $previous = $this->aggregate;
+        $this->aggregate = ['function' => 'count', 'columns' => [$columns]];
+
+        try {
+            $rows = $this->restConnection()->select($this->toIntent(forcedLimit: 1), [], true);
+        } finally {
+            $this->aggregate = $previous;
+        }
+
+        $aggregate = $rows[0]['aggregate'] ?? null;
+
+        if (is_numeric($aggregate)) {
+            return max(0, (int) $aggregate);
+        }
+
+        $total = $this->restConnection()->lastPageInfo()?->total;
+
+        if (is_int($total)) {
+            return max(0, $total);
+        }
+
+        throw new BadMethodCallException(
+            'count() needs an adapter that answers count intents, or a configured pagination.meta_total path.',
+        );
     }
 
     protected function runPaginationCountQuery($columns = ['*'])

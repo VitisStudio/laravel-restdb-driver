@@ -389,6 +389,7 @@ final class IntentFactory
     {
         $limit = $builder->limit;
         $offset = $builder->offset;
+        $page = $builder->pageNumber;
 
         if ($limit !== null) {
             $gate->ensure(Capability::Limit, 'limit', $model);
@@ -398,17 +399,21 @@ final class IntentFactory
             $gate->ensure(Capability::Offset, 'offset', $model);
         }
 
+        if ($page !== null) {
+            $gate->ensure(Capability::PageNumber, 'paginate', $model);
+        }
+
         // An internal probe limit (exists()) is not the developer's limit() —
         // it is applied without a gate; the drain loop trims client-side.
         if ($forcedLimit !== null) {
             $limit = $limit === null ? $forcedLimit : min($limit, $forcedLimit);
         }
 
-        if ($limit === null && $offset === null) {
+        if ($limit === null && $offset === null && $page === null) {
             return null;
         }
 
-        return new PageRequest(limit: $limit, offset: $offset);
+        return new PageRequest(limit: $limit, offset: $offset, page: $page);
     }
 
     private static function aggregate(Builder $builder, CapabilityGate $gate, ?string $model): ?string
