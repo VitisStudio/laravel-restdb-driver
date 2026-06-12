@@ -1,0 +1,16 @@
+{
+  "name": "restdb-mock-jsonapi",
+  "private": true,
+  "description": "Hatchify-powered mock JSON:API server (authors -> posts -> comments) for verifying the restdb json-api adapter",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@hatchifyjs/core": "^0.4.0",
+    "@hatchifyjs/koa": "^1.3.66",
+    "koa": "^2.15.0",
+    "sequelize": "^6.37.0",
+    "sqlite3": "^5.1.7"
+  }
+}

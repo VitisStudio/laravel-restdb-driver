@@ -1,5 +1,77 @@
 # Progress Log
 
+## G9 — Mock JSON:API server + what a real strict server forced ✅
+
+**Shipped** (`tools/mock-jsonapi` + jsonapi adapter additions)
+- Hatchify (`@hatchifyjs/koa`) mock JSON:API server over in-memory SQLite,
+  seeded authors → posts → comments on boot. (bitovi/mock-jsonapi, the
+  originally requested tool, turned out to be an empty README-only repo —
+  hatchify is bitovi's living equivalent.)
+- Driving a real strict server surfaced three adapter gaps, all closed as
+  config, with tests:
+  - **`dollar-operator` filter dialect** — sequelize-style
+    `filter[rating][$gte]=4`, `$in`/`$nin` comma lists, `$like` with raw SQL
+    wildcards (hatchify, and anything on @bitovi/querystring-parser).
+  - **`resource_types` map** — strict servers reject `type: "authors"`,
+    demanding their schema name (`'authors' => 'Author'`).
+  - **Total-based pagination math** — hatchify sends no `links` object;
+    `links.next` was the only drain signal, so multi-page `get()` would have
+    silently truncated to page 1. Paginators now compute the next page from
+    the current request whenever a meta total is configured; links still win
+    when present. `page[size]` also never travels without `page[number]` —
+    strict servers 422 on a lone size.
+- Example app gains the `demo:crm` command running the full tour (dollar
+  filters, compound-document `with()`, math-paginated drain, one-request
+  `paginate()`/`count()` off `meta.unpaginatedCount`, UUID writes, gate)
+  against the mock — verified live end to end, exit 0. The `crm` connection
+  is config-only; bootstrap now registers `withExceptions()` so driver
+  exceptions render instead of dying silently (pre-existing skeleton gap).
+- Tests: 198 passing. Pint + Larastan max clean.
+
+
+
+## G8 — Config-driven generic adapter + wire-format presets ✅
+
+**Shipped** (`packages/core/src/Rest`)
+- The generic adapter no longer requires hand-written classes: when a
+  connection omits `compiler`/`parser`/`paginator`, config-driven defaults
+  take over — `RestRequestCompiler` (filter styles `suffix`/`bracket`/`plain`,
+  optional `wrapper`, `in` comma/single modes, like wildcard handling,
+  between→gte+lte decomposition, identity URLs, prefix or split-param sort,
+  PATCH/PUT writes with optional body wrap, fields/include params),
+  `JsonResponseParser` (bare bodies or `response.data`/`response.errors`
+  dot-path envelopes, configurable `id_key`), and `QueryParamPaginator`
+  (param names from config; the params you name are the page.* capabilities
+  you get; totals from a header or body path power one-request paginate()
+  and count(); no-total APIs probe forward until an empty page).
+- **Presets**: `'preset' => 'json-server'` expands a connection-config
+  fragment — wire format AND a capabilities block declaring what the named
+  framework honors (baseline stays NONE; presets *declare*, nothing is
+  derived). User presets live in `config/restdb.php` under `presets`, win
+  over built-ins by name; declared connection keys always win over the
+  preset (recursive merge for maps, wholesale for lists/scalars).
+- Fail-loud preserved everywhere: flat styles throw on nested groups, OR
+  booleans, and conditions that collide on one query parameter; every
+  config-shaped refusal names the exact key to set (`filters.in`,
+  `fields.param`, `pagination.params.page`, …). Unknown presets list the
+  available names.
+- Example app rewrote itself out of a job: `app/RestDB` (3 classes, ~280
+  lines) deleted; the jsonplaceholder connection is now `preset:
+  json-server` + base_url. Demo behavior unchanged.
+- Tests: 193 passing — compiler/parser/paginator units, preset merge
+  semantics, end-to-end preset connection (wire format, gate from preset
+  capabilities, overrides, user presets shadowing built-ins, unknown-preset
+  error, conformance kit on preset config alone). Pint + Larastan max clean.
+
+**Notes**
+- Custom strategy classes remain the escape hatch for APIs that outgrow
+  configuration; `generic` still starts from capability NONE without a
+  preset or declared block.
+- Cursor pagination intentionally not in `QueryParamPaginator` (generic
+  cursor APIs vary too much) — a custom paginator class covers it.
+
+
+
 ## Example app — Eloquent over live JSONPlaceholder ✅
 
 **Shipped** (`examples/jsonplaceholder`)

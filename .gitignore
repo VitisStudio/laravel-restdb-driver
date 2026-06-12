@@ -5,3 +5,4 @@ composer.lock
 /build/
 /coverage/
 .DS_Store
+node_modules/

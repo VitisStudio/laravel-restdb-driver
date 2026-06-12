@@ -13,23 +13,47 @@ php artisan demo gate     # or one section: queries|pagination|relations|writes|
 php artisan restdb:capabilities jsonplaceholder
 ```
 
+There are two connections — two adapters, two demos:
+
+| Connection | Adapter | Backend | Demo |
+| --- | --- | --- | --- |
+| `jsonplaceholder` | `generic` + `json-server` preset | live JSONPlaceholder | `php artisan demo` |
+| `crm` | `json-api` | local hatchify mock ([tools/mock-jsonapi](../../tools/mock-jsonapi)) | `php artisan demo:crm` |
+
+```bash
+# in one terminal
+cd tools/mock-jsonapi && npm install && npm start
+
+# in another
+cd examples/jsonplaceholder && php artisan demo:crm
+```
+
 ## Why the *generic* adapter and not the json-api one?
 
 JSONPlaceholder is json-server, **not** a JSON:API server: bare JSON arrays,
 no `data`/`attributes` envelope, `_page`/`_limit`/`_sort` parameters. The
 `json-api` adapter would be lying to it. So this example demonstrates the
-driver's Layer 1 — "talk to any REST API" — with three small classes in
-[app/RestDB](app/RestDB) (~150 lines total):
+driver's Layer 1 — "talk to any REST API" — and the whole integration is
+**one config line**:
 
-- **JsonPlaceholderCompiler** — intents → `?userId=1&id_gte=5&_sort=title&_order=desc`
-- **JsonPlaceholderParser** — bare arrays/objects → attribute rows
-- **JsonPlaceholderPaginator** — `_page`/`_limit`/`_start` + the
-  `X-Total-Count` header, which powers one-request `paginate()` and `count()`
+```php
+'preset' => 'json-server',
+```
 
-A real JSON:API backend needs none of that: see the `crm` connection in
-[config/database.php](config/database.php) — the preconfigured
-`vitis/restdb-jsonapi` adapter with zero custom classes (plus
-`restdb:make-models` to generate the model classes from its OpenAPI spec).
+The built-in preset carries the wire format (intents →
+`?userId=1&id_gte=5&_sort=title&_order=desc`, bare-JSON parsing,
+`_page`/`_limit`/`_start` + `X-Total-Count` pagination, which powers
+one-request `paginate()` and `count()`) and the capability block declaring
+what json-server actually honors. APIs with no preset describe their wire
+format with the same granular keys (`filters`, `sort`, `pagination`,
+`response`) in the connection or a custom preset in `config/restdb.php` —
+hand-written compiler/parser/paginator classes are only for APIs that outgrow
+configuration.
+
+A real JSON:API backend uses the dedicated adapter instead: see the `crm`
+connection in [config/database.php](config/database.php) — the preconfigured
+`vitis/restdb-jsonapi` adapter (plus `restdb:make-models` to generate the
+model classes from its OpenAPI spec).
 
 ## What the demo shows
 

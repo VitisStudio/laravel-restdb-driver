@@ -20,8 +20,52 @@ This repository is a monorepo of three stacked packages:
 | Package | Requires | What it is |
 | --- | --- | --- |
 | [`vitis/restdb-contracts`](packages/contracts) | nothing | The SPI: contracts, value objects, capability primitives |
-| [`vitis/restdb`](packages/core) | contracts | The driver: connection, gated builder, transport, auth, generic adapter |
+| [`vitis/restdb`](packages/core) | contracts | The driver: connection, gated builder, transport, auth, config-driven generic adapter + presets |
 | [`vitis/restdb-jsonapi`](packages/jsonapi) | core | A complete JSON:API v1.1 adapter, including spec-driven model generation |
+
+## Quick start (plain REST backend)
+
+```bash
+composer require vitis/restdb
+```
+
+Most plain REST APIs need **no code** — the generic adapter's compiler,
+parser, and paginator are shaped by config. For a known server framework,
+one preset line carries the whole wire format *and* the capabilities it
+honors:
+
+```php
+// config/database.php
+'connections' => [
+    'jsonplaceholder' => [
+        'driver'   => 'restdb',
+        'adapter'  => 'generic',
+        'base_url' => 'https://jsonplaceholder.typicode.com',
+        'preset'   => 'json-server',   // _gte suffixes, _sort/_order, X-Total-Count totals
+    ],
+],
+```
+
+APIs without a preset describe their wire format granularly — on the
+connection, or as a reusable named preset in `config/restdb.php`:
+
+```php
+'presets' => [
+    'corp-api' => [
+        'filters'    => ['style' => 'bracket', 'wrapper' => 'filter'], // filter[age][gte]=18
+        'sort'       => ['param' => 'sort'],                           // sort=-createdAt
+        'pagination' => [
+            'params'     => ['page' => 'page', 'limit' => 'per_page'],
+            'total_path' => 'meta.total',
+        ],
+        'response'     => ['data' => 'data'],                          // {"data": [...]}
+        'capabilities' => ['select' => true, 'sort' => true, 'filter' => ['operators' => ['eq', 'gte']]],
+    ],
+],
+```
+
+Hand-written compiler/parser/paginator classes remain the escape hatch for
+APIs that outgrow configuration (`'compiler' => MyCompiler::class`).
 
 ## Quick start (JSON:API backend)
 
@@ -67,7 +111,8 @@ meta), `save` (dirty-only PATCH), `delete`.
 ## The capability system
 
 A connection can only do what it declares. The `generic` adapter starts from
-**nothing**; the `json-api` adapter starts from what the spec guarantees.
+**nothing** — a preset *declares* what its named server framework honors, it
+never derives; the `json-api` adapter starts from what the spec guarantees.
 Capabilities layer bottom-up: adapter baseline → paginator contributions →
 discovered manifest (advisory) → declared config (always wins). Models may
 narrow, never widen. Anything undeclared throws at your line:
@@ -91,13 +136,20 @@ Inspect any connection with `php artisan restdb:capabilities crm`.
 ## Example app
 
 [`examples/jsonplaceholder`](examples/jsonplaceholder) is a runnable Laravel
-app querying the **live** JSONPlaceholder API through Eloquent — filters,
-one-request pagination off the `X-Total-Count` header, relations, writes, and
-what fail-loud looks like:
+app querying the **live** JSONPlaceholder API through Eloquent off the
+`json-server` preset alone (zero custom classes) — filters, one-request
+pagination off the `X-Total-Count` header, relations, writes, and what
+fail-loud looks like:
 
 ```bash
 cd examples/jsonplaceholder && composer install && php artisan demo
 ```
+
+The same app also drives a **real JSON:API server** — the hatchify-powered
+mock in [`tools/mock-jsonapi`](tools/mock-jsonapi) — through the `json-api`
+adapter (`php artisan demo:crm`): dollar-operator filters, compound-document
+eager loading, total-based pagination against a server that sends no `links`,
+and typed writes via `resource_types`.
 
 ## Development
 

@@ -1,9 +1,6 @@
 <?php
 
 declare(strict_types=1);
-use App\RestDB\JsonPlaceholderCompiler;
-use App\RestDB\JsonPlaceholderPaginator;
-use App\RestDB\JsonPlaceholderParser;
 
 return [
 
@@ -13,47 +10,38 @@ return [
 
         /*
         | JSONPlaceholder is plain REST (json-server), not JSON:API — so this
-        | connection uses the generic adapter with a hand-written compiler,
-        | parser, and paginator (~150 lines total in app/RestDB). The
-        | capability block declares exactly what json-server can honor;
-        | everything else fails loudly at the call site.
+        | connection uses the generic adapter with the built-in 'json-server'
+        | preset. The preset carries the whole wire format (suffix filters,
+        | _sort/_order, _page/_limit, X-Total-Count totals) AND the capability
+        | block declaring what json-server honors; everything else fails
+        | loudly at the call site. No custom classes anywhere.
         */
         'jsonplaceholder' => [
             'driver' => 'restdb',
             'adapter' => 'generic',
             'base_url' => 'https://jsonplaceholder.typicode.com',
             'auth' => ['driver' => 'none'],
-            'compiler' => JsonPlaceholderCompiler::class,
-            'parser' => JsonPlaceholderParser::class,
-            'paginator' => JsonPlaceholderPaginator::class,
-            'capabilities' => [
-                'select' => true,
-                'filter' => ['operators' => ['eq', 'in', 'ne', 'gte', 'lte', 'like']],
-                'sort' => true,
-                'sort.multi' => true,
-                'aggregate.count' => true,
-                'aggregate.exists' => true,
-                'write.insert' => true,
-                'write.update' => true,
-                'write.delete' => true,
-                // page.limit / page.number / page.offset / page.total are
-                // contributed by JsonPlaceholderPaginator::provides().
-            ],
+            'preset' => 'json-server',
             'http' => ['timeout' => 10, 'connect_timeout' => 5],
         ],
 
         /*
-        | Reference: what a real JSON:API backend looks like with the
-        | preconfigured vitis/restdb-jsonapi adapter — zero custom classes.
-        | Point base_url at a JSON:API v1.1 server and it works as-is.
+        | A real JSON:API backend on the preconfigured vitis/restdb-jsonapi
+        | adapter — zero custom classes, config only. Defaults to the
+        | hatchify mock server in tools/mock-jsonapi (`npm start` there,
+        | then `php artisan demo:crm` here). Hatchify speaks dollar
+        | operators (filter[rating][$gte]=4), wants its schema names as the
+        | type member, sends totals in meta.unpaginatedCount, and omits
+        | links — all of it config.
         */
         'crm' => [
             'driver' => 'restdb',
             'adapter' => 'json-api',
-            'base_url' => env('CRM_API_URL', 'https://example.invalid'),
-            'pagination' => ['strategy' => 'page-number', 'size' => 25, 'meta_total' => 'meta.page.total'],
-            'filter_dialect' => 'nested-operator',
-            'capabilities' => ['page.total' => true, 'aggregate.count' => true],
+            'base_url' => env('CRM_API_URL', 'http://localhost:3010/api'),
+            'pagination' => ['strategy' => 'page-number', 'size' => 5, 'meta_total' => 'meta.unpaginatedCount'],
+            'filter_dialect' => 'dollar-operator',
+            'resource_types' => ['authors' => 'Author', 'posts' => 'Post', 'comments' => 'Comment'],
+            'capabilities' => ['page.total' => true, 'aggregate.count' => true, 'aggregate.exists' => true],
         ],
 
     ],
