@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Vitis\RestDB\Auth;
 
+use Illuminate\Contracts\Cache\Factory;
 use Illuminate\Contracts\Container\Container;
 use Vitis\RestDB\Contracts\Authenticator;
 use Vitis\RestDB\Exceptions\InvalidConfigurationException;
@@ -46,8 +47,36 @@ final class AuthenticatorResolver
                 $this->requireString($auth, 'password', $config->name),
             ),
             'api_key' => ApiKeyAuthenticator::fromConfig($auth, $config->name),
+            'oauth2_client_credentials' => $this->clientCredentials($auth, $config),
             default => $this->custom($driver, $registry, $config),
         };
+    }
+
+    /** @param array<string, mixed> $auth */
+    private function clientCredentials(array $auth, ConnectionConfig $config): ClientCredentialsAuthenticator
+    {
+        $scopes = [];
+
+        foreach (is_array($auth['scopes'] ?? null) ? $auth['scopes'] : [] as $scope) {
+            if (is_string($scope)) {
+                $scopes[] = $scope;
+            }
+        }
+
+        $store = $auth['cache_store'] ?? null;
+        $skew = $auth['expiry_skew'] ?? 60;
+
+        return new ClientCredentialsAuthenticator(
+            $this->container->make(Factory::class),
+            $this->container->make(\Illuminate\Http\Client\Factory::class),
+            $config->name,
+            $this->requireString($auth, 'token_url', $config->name),
+            $this->requireString($auth, 'client_id', $config->name),
+            $this->requireString($auth, 'client_secret', $config->name),
+            $scopes,
+            is_string($store) ? $store : null,
+            is_int($skew) ? $skew : 60,
+        );
     }
 
     /** @param array<string, class-string> $registry */

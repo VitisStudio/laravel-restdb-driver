@@ -6,6 +6,7 @@ namespace Vitis\RestDB\Query;
 
 use BadMethodCallException;
 use Closure;
+use Illuminate\Support\LazyCollection;
 use LogicException;
 use Vitis\RestDB\Capabilities\Capability;
 use Vitis\RestDB\Capabilities\CapabilityGate;
@@ -207,6 +208,14 @@ class Builder extends \Illuminate\Database\Query\Builder
     protected function runSelect()
     {
         return $this->restConnection()->select($this->toIntent(), [], ! $this->useWritePdo);
+    }
+
+    /** @return LazyCollection<int, \stdClass> */
+    public function cursor()
+    {
+        return new LazyCollection(function () {
+            yield from $this->restConnection()->cursor($this->toIntent(), [], ! $this->useWritePdo);
+        });
     }
 
     public function exists()

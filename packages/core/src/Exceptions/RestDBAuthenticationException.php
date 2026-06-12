@@ -16,4 +16,19 @@ final class RestDBAuthenticationException extends RuntimeException implements Re
             ."Check the credentials under connections.{$connection}.auth.",
         );
     }
+
+    public static function tokenEndpointFailed(string $connection, int $status): self
+    {
+        return new self(
+            "Connection [{$connection}]: the OAuth2 token endpoint returned HTTP {$status}. "
+            ."Check auth.token_url, auth.client_id, and auth.client_secret under connections.{$connection}.",
+        );
+    }
+
+    public static function invalidTokenResponse(string $connection): self
+    {
+        return new self(
+            "Connection [{$connection}]: the OAuth2 token endpoint responded without an access_token.",
+        );
+    }
 }

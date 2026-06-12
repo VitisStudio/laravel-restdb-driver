@@ -235,10 +235,64 @@ class RestConnection extends Connection
     |--------------------------------------------------------------------------
     */
 
-    /** @param array<mixed> $bindings */
-    public function cursor($query, $bindings = [], $useReadPdo = true): never
+    /**
+     * Streams rows page by page — the recommended path for large sets: one
+     * page in memory at a time, same max_pages guard, same limit semantics.
+     *
+     * @param  SelectIntent|string  $query
+     * @param  array<mixed>  $bindings
+     * @return \Generator<int, \stdClass>
+     */
+    public function cursor($query, $bindings = [], $useReadPdo = true): \Generator
     {
-        throw new LogicException('cursor()/lazy() on restdb connections land in v0.2.');
+        if (! $query instanceof SelectIntent) {
+            throw new LogicException('RestConnection::cursor() expects a SelectIntent — raw SQL has no meaning here.');
+        }
+
+        if ($query->provablyEmpty()) {
+            return;
+        }
+
+        $compiled = $this->compile($query);
+
+        if ($compiled instanceof EmptyResult) {
+            return;
+        }
+
+        // run() wraps the stream setup so QueryExecuted still fires with the
+        // request line; subsequent page fetches stream outside the timer.
+        $this->run($compiled->requestLine(), [], static fn (): bool => true);
+
+        $maxPages = $this->maxPages();
+        $limit = $query->page?->limit;
+        $request = $compiled;
+        $pages = 0;
+        $emitted = 0;
+
+        do {
+            if (++$pages > $maxPages) {
+                throw ResultTruncationException::maxPages($this->connectionConfig->name, $maxPages);
+            }
+
+            $response = $this->sendAndMap($request);
+
+            if ($response === null) {
+                return;
+            }
+
+            $page = $this->parser->rows($response, $query);
+
+            foreach ($page->rows as $row) {
+                // The base contract streams stdClass rows, PDO-style.
+                yield (object) $row;
+
+                if ($limit !== null && ++$emitted >= $limit) {
+                    return;
+                }
+            }
+
+            $info = $this->paginator->pageInfo($response, $page);
+        } while (($request = $this->paginator->nextRequest($request, $info)) !== null);
     }
 
     /** @param array<mixed> $bindings */

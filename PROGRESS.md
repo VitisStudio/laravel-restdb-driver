@@ -1,5 +1,35 @@
 # Progress Log
 
+## G2 — Pagination + auth ✅
+
+**Shipped**
+- Streaming: `RestConnection::cursor()` generator (one page in memory,
+  max_pages guard, limit short-circuit, stdClass rows per the base contract);
+  gated `Builder::cursor()` over it; `lazy()/chunk()/simplePaginate()` ride
+  forPage through the Limit/Offset gates; `paginate()` blocked with a
+  simplePaginate hint until v0.5 meta totals.
+- Drain semantics proven against a multi-page fixture paginator (offset
+  strategy, `provides()` contributes Limit+Offset): drains until has-more is
+  false, stops at limit, throws `ResultTruncationException` at the guard —
+  never truncates silently.
+- OAuth2 client credentials: cache key
+  `restdb:token:{connection}:{sha1(url|id|scopes)}`, TTL `expires_in − skew`
+  (floor 10s), lock-guarded fetch with double-checked read, bare-factory token
+  request (no recursion), configurable store. 401 → invalidate → re-auth →
+  retry exactly once, second 401 surfaces; connection-error retries share the
+  same retry pipeline.
+- Tests: 96 passing — multi-page drain, stream laziness (asserts request count
+  mid-iteration), token reuse across rebuilt connections, expiry-skew via time
+  travel, stale→fresh token on the retried request, two-connection isolation.
+- Full Operator enum was already wired in G1; the matrix covers all 12.
+
+**Notes**
+- True parallel stampede can't run in one PHP test process; covered by the
+  lock + double-checked-read implementation and a cache-sharing test.
+  Revisit with a real parallel harness in G7 (Octane suite).
+
+
+
 ## G1 — Read core ✅
 
 **Shipped**

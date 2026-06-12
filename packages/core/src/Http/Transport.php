@@ -7,8 +7,10 @@ namespace Vitis\RestDB\Http;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Vitis\RestDB\Contracts\Authenticator;
+use Vitis\RestDB\Contracts\RefreshableAuthenticator;
 use Vitis\RestDB\Values\ApiResponse;
 use Vitis\RestDB\Values\CompiledRequest;
 use Vitis\RestDB\Values\ConnectionConfig;
@@ -21,6 +23,9 @@ use Vitis\RestDB\Values\ConnectionConfig;
  */
 final class Transport
 {
+    /** One refresh per send(), tracked per request cycle — never a loop. */
+    private bool $refreshed = false;
+
     public function __construct(
         private readonly Factory $http,
         private readonly ConnectionConfig $config,
@@ -30,6 +35,8 @@ final class Transport
 
     public function send(CompiledRequest $request): ApiResponse
     {
+        $this->refreshed = false;
+
         $pending = $this->pending();
 
         if ($request->headers !== []) {
@@ -72,17 +79,46 @@ final class Transport
             ->timeout($this->options->timeout)
             ->connectTimeout($this->options->connectTimeout);
 
-        if ($this->options->retryTimes > 1) {
-            // Retries cover transport failures only; HTTP status handling —
-            // including the 401-refresh-retry-once — is layered separately.
+        $refreshable = $this->authenticator instanceof RefreshableAuthenticator;
+        $attempts = max($this->options->retryTimes, $refreshable ? 2 : 1);
+
+        if ($attempts > 1) {
             $pending = $pending->retry(
-                $this->options->retryTimes,
+                $attempts,
                 $this->options->retrySleep,
-                static fn (mixed $exception): bool => $exception instanceof ConnectionException,
+                fn (mixed $exception, PendingRequest $request): bool => $this->shouldRetry($exception, $request),
                 throw: false,
             );
         }
 
         return $pending;
+    }
+
+    /**
+     * Connection failures retry per config. A 401 with a refreshable
+     * authenticator retries exactly once with a fresh credential — safe even
+     * for non-idempotent calls, since a 401 means the origin rejected the
+     * request before processing. A second 401 surfaces; never loop.
+     */
+    private function shouldRetry(mixed $exception, PendingRequest $request): bool
+    {
+        if ($exception instanceof ConnectionException) {
+            return true;
+        }
+
+        if (
+            $this->authenticator instanceof RefreshableAuthenticator
+            && $exception instanceof RequestException
+            && $exception->response->status() === 401
+            && ! $this->refreshed
+        ) {
+            $this->refreshed = true;
+            $this->authenticator->invalidate();
+            $this->authenticator->authenticate($request);
+
+            return true;
+        }
+
+        return false;
     }
 }
