@@ -39,11 +39,13 @@ dataset('capability matrix', [
         ['select' => true, 'filter' => ['operators' => ['gte']]],
         fn () => Article::query()->where('rating', '>=', 4)->get(),
     ],
+    // Note: whereIn on the primary key is identity targeting and bypasses
+    // operator capabilities — the matrix must probe a non-key column.
     'filter operator in' => [
         'in',
         ['select' => true, 'filter' => ['operators' => ['eq']]],
         ['select' => true, 'filter' => ['operators' => ['in']]],
-        fn () => Article::query()->whereIn('id', [1, 2])->get(),
+        fn () => Article::query()->whereIn('status', ['open', 'closed'])->get(),
     ],
     'filter operator not-in' => [
         'not-in',
@@ -133,7 +135,7 @@ dataset('capability matrix', [
         'write.update',
         ['select' => true],
         ['select' => true, 'write.update' => true],
-        fn () => Article::query()->toBase()->update(['title' => 'x']),
+        fn () => Article::query()->toBase()->where('id', 1)->update(['title' => 'x']),
     ],
     'write.delete' => [
         'write.delete',
@@ -169,8 +171,6 @@ it('proceeds when the capability is present', function (string $needle, array $w
         $act();
     } catch (UnsupportedCapabilityException $e) {
         $this->fail("Capability [{$needle}] was declared but still threw: {$e->getMessage()}");
-    } catch (LogicException) {
-        // Write paths are gated now and implemented in v0.3.
     }
 
     expect(true)->toBeTrue();

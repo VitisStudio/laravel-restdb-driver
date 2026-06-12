@@ -29,6 +29,9 @@ class Builder extends \Illuminate\Database\Query\Builder
     /** Model class for exception messages, set by the Eloquent builder. */
     protected ?string $modelContext = null;
 
+    /** Primary key name, set by the model trait. Identity wheres bypass filter caps. */
+    protected string $keyName = 'id';
+
     /** True once select()/addSelect() was called explicitly by the developer. */
     protected bool $explicitColumns = false;
 
@@ -42,6 +45,16 @@ class Builder extends \Illuminate\Database\Query\Builder
         return $this->modelContext;
     }
 
+    public function setKeyName(string $keyName): void
+    {
+        $this->keyName = $keyName;
+    }
+
+    public function keyName(): string
+    {
+        return $this->keyName;
+    }
+
     public function explicitColumns(): bool
     {
         return $this->explicitColumns;
@@ -51,6 +64,7 @@ class Builder extends \Illuminate\Database\Query\Builder
     {
         $query = new static($this->connection, $this->grammar, $this->processor);
         $query->modelContext = $this->modelContext;
+        $query->keyName = $this->keyName;
 
         return $query;
     }
@@ -94,7 +108,9 @@ class Builder extends \Illuminate\Database\Query\Builder
             $mapped = Operator::fromSqlOperator($operator)
                 ?? throw UnsupportedQueryException::sqlOperator($operator);
 
-            $this->gate()->ensureOperator($mapped, $this->isOr($boolean) ? 'orWhere' : 'where', $this->modelContext);
+            if (! $this->isIdentityWhere($column, $mapped, $boolean)) {
+                $this->gate()->ensureOperator($mapped, $this->isOr($boolean) ? 'orWhere' : 'where', $this->modelContext);
+            }
         }
 
         return parent::where($column, $operator, $value, $boolean);
@@ -106,8 +122,10 @@ class Builder extends \Illuminate\Database\Query\Builder
             throw UnsupportedQueryException::subquery($not ? 'whereNotIn' : 'whereIn');
         }
 
-        $method = ($this->isOr($boolean) ? 'orWhere' : 'where').($not ? 'NotIn' : 'In');
-        $this->gate()->ensureOperator($not ? Operator::NotIn : Operator::In, $method, $this->modelContext);
+        if ($not || ! $this->isIdentityWhere($column, Operator::In, $boolean)) {
+            $method = ($this->isOr($boolean) ? 'orWhere' : 'where').($not ? 'NotIn' : 'In');
+            $this->gate()->ensureOperator($not ? Operator::NotIn : Operator::In, $method, $this->modelContext);
+        }
 
         return parent::whereIn($column, $values, $boolean, $not);
     }
@@ -248,7 +266,11 @@ class Builder extends \Illuminate\Database\Query\Builder
     {
         $this->gate()->ensure(Capability::Insert, 'insert', $this->modelContext);
 
-        throw new LogicException('The restdb write path ships in v0.3.');
+        if ($values === []) {
+            return true;
+        }
+
+        return $this->restConnection()->insert(IntentFactory::insert($this, $values), []);
     }
 
     /** @param array<mixed> $values */
@@ -256,7 +278,18 @@ class Builder extends \Illuminate\Database\Query\Builder
     {
         $this->gate()->ensure(Capability::Insert, 'insertGetId', $this->modelContext);
 
-        throw new LogicException('The restdb write path ships in v0.3.');
+        $this->restConnection()->insert(IntentFactory::insert($this, $values), []);
+
+        $id = $this->restConnection()->lastWriteResult()?->id;
+
+        if (! is_numeric($id)) {
+            throw new LogicException(
+                'The API returned a non-numeric id for an incrementing-key model. '
+                .'Set $incrementing = false (string keys) and read the id from the re-filled model.',
+            );
+        }
+
+        return (int) $id;
     }
 
     /** @param array<mixed> $values */
@@ -264,14 +297,18 @@ class Builder extends \Illuminate\Database\Query\Builder
     {
         $this->gate()->ensure(Capability::Update, 'update', $this->modelContext);
 
-        throw new LogicException('The restdb write path ships in v0.3.');
+        return $this->restConnection()->update(IntentFactory::update($this, $values), []);
     }
 
     public function delete($id = null)
     {
         $this->gate()->ensure(Capability::Delete, 'delete', $this->modelContext);
 
-        throw new LogicException('The restdb write path ships in v0.3.');
+        if ($id !== null) {
+            $this->where($this->keyName, '=', $id);
+        }
+
+        return $this->restConnection()->delete(IntentFactory::delete($this), []);
     }
 
     public function toSql(): never
@@ -548,6 +585,23 @@ class Builder extends \Illuminate\Database\Query\Builder
     protected function isOr(string $boolean): bool
     {
         return str_contains(strtolower($boolean), 'or');
+    }
+
+    /**
+     * Primary-key equality is identity targeting (GET/PATCH/DELETE a resource
+     * by id) — the definition of REST, not a filter. It bypasses operator
+     * capabilities so find()/save()/delete() work on filterless connections.
+     */
+    protected function isIdentityWhere(mixed $column, Operator $operator, string $boolean): bool
+    {
+        if (! is_string($column) || $this->isOr($boolean)) {
+            return false;
+        }
+
+        $name = str_contains($column, '.') ? substr((string) strrchr($column, '.'), 1) : $column;
+
+        return $name === $this->keyName
+            && in_array($operator, [Operator::Eq, Operator::In], true);
     }
 
     protected function unsupported(string $method): never

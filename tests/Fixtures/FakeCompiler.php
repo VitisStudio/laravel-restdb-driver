@@ -87,16 +87,32 @@ final class FakeCompiler implements RequestCompiler
 
     public function compileInsert(InsertIntent $intent): CompiledRequest
     {
-        throw new \LogicException('Writes are not part of the read-core fixture.');
+        return new CompiledRequest('POST', $this->endpoints->collection($intent->resource), [], $intent->rows[0] ?? []);
     }
 
     public function compileUpdate(UpdateIntent $intent): CompiledRequest
     {
-        throw new \LogicException('Writes are not part of the read-core fixture.');
+        return new CompiledRequest(
+            'PATCH',
+            $this->endpoints->resource($intent->resource, $this->targetId($intent->filters)),
+            [],
+            $intent->attributes,
+        );
     }
 
     public function compileDelete(DeleteIntent $intent): CompiledRequest
     {
-        throw new \LogicException('Writes are not part of the read-core fixture.');
+        return new CompiledRequest('DELETE', $this->endpoints->resource($intent->resource, $this->targetId($intent->filters)));
+    }
+
+    private function targetId(FilterGroup $filters): string
+    {
+        foreach ($filters->allConditions() as $condition) {
+            $value = is_array($condition->value) ? ($condition->value[0] ?? null) : $condition->value;
+
+            return is_scalar($value) ? (string) $value : '';
+        }
+
+        return '';
     }
 }

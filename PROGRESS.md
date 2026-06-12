@@ -1,5 +1,35 @@
 # Progress Log
 
+## G3 — Write path ✅
+
+**Shipped**
+- insert/insertGetId/update/delete flow through compiler contracts:
+  POST / dirty-only PATCH / DELETE; the connection exposes
+  `lastWriteResult()` and the model trait re-fills from the server's resource
+  state after every write (`performInsert`/`performUpdate` hooks) — server
+  mutations and assigned ids land on the model.
+- Single-resource rule: writes must target exactly one resource by primary
+  key; arbitrary-where mass update/delete and multi-row insert throw with an
+  Atomic-Operations pointer. 404 on update/delete = 0 affected; 404 on create
+  = config error.
+- 422 → `ApiValidationException extends Illuminate ValidationException`
+  (field-keyed, renders like local validation).
+- `oauth2_refresh_token`: refresh grant on the bare factory, rotated refresh
+  tokens persisted under the same lock, `invalid_grant` → dedicated
+  re-consent exception with no retry.
+- **Identity-where rule (deviation worth knowing):** top-level AND
+  primary-key equality (`id = ?` / `id IN (one)`) bypasses filter-operator
+  capabilities in both gate phases. GET/PATCH/DELETE-by-id is the definition
+  of a REST resource, not a filter — without this, `find()`/`save()`/
+  `delete()` would demand `filter.eq` on the JSON:API baseline, contradicting
+  the plan's own flows. Key name travels from the model trait into the
+  builder (`setKeyName`); non-key columns still gate.
+- Tests: 110 passing, including dirty-only PATCH bodies, server-mutation
+  re-fill, clean-save = zero HTTP, mass-write refusals, 422 field mapping,
+  refresh-token rotation across a 401, filterless-connection identity flows.
+
+
+
 ## G2 — Pagination + auth ✅
 
 **Shipped**

@@ -54,6 +54,23 @@ final class UnsupportedQueryException extends RuntimeException implements RestDB
         );
     }
 
+    public static function massWrite(string $method): self
+    {
+        return new self(
+            "{$method}() with arbitrary wheres is not supported — REST writes target a single resource "
+            .'by primary key. Fetch the models and save()/delete() them individually. '
+            .'(JSON:API Atomic Operations is a documented future capability.)',
+        );
+    }
+
+    public static function batchInsert(): self
+    {
+        return new self(
+            'Multi-row insert() is not supported — REST creates one resource per request. '
+            .'Insert rows individually. (JSON:API Atomic Operations is a documented future capability.)',
+        );
+    }
+
     public static function aggregate(string $function): self
     {
         return new self(

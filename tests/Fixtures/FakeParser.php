@@ -38,14 +38,38 @@ final class FakeParser implements ResponseParser
 
     public function writeResult(ApiResponse $response, InsertIntent|UpdateIntent|DeleteIntent $intent): WriteResult
     {
-        throw new \LogicException('Writes are not part of the read-core fixture.');
+        $data = $response->json()['data'] ?? [];
+
+        /** @var array<string, mixed> $attributes */
+        $attributes = is_array($data) && ! array_is_list($data) ? $data : [];
+
+        $id = $attributes['id'] ?? null;
+
+        return new WriteResult(
+            affected: $response->successful() ? 1 : 0,
+            id: is_string($id) || is_int($id) ? $id : null,
+            attributes: $attributes,
+        );
     }
 
     public function errors(ApiResponse $response): ?ErrorBag
     {
         $json = $response->json();
+
+        $fields = [];
+
+        foreach (is_array($json['errors'] ?? null) ? $json['errors'] : [] as $field => $messages) {
+            if (is_string($field) && is_array($messages)) {
+                $fields[$field] = array_values(array_filter($messages, is_string(...)));
+            }
+        }
+
         $message = $json['message'] ?? null;
 
-        return is_string($message) ? new ErrorBag(general: [$message]) : null;
+        if ($fields === [] && ! is_string($message)) {
+            return null;
+        }
+
+        return new ErrorBag($fields, is_string($message) ? [$message] : []);
     }
 }

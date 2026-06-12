@@ -25,6 +25,14 @@ final class RestDBAuthenticationException extends RuntimeException implements Re
         );
     }
 
+    public static function invalidGrant(string $connection): self
+    {
+        return new self(
+            "Connection [{$connection}]: the OAuth2 refresh token was rejected (invalid_grant). "
+            .'The user must re-consent; a retry cannot fix this.',
+        );
+    }
+
     public static function invalidTokenResponse(string $connection): self
     {
         return new self(

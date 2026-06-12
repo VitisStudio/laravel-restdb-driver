@@ -15,6 +15,7 @@ use Vitis\RestDB\Contracts\RequestCompiler;
 use Vitis\RestDB\Contracts\ResponseParser;
 use Vitis\RestDB\Contracts\RestDBException;
 use Vitis\RestDB\Exceptions\ApiResponseException;
+use Vitis\RestDB\Exceptions\ApiValidationException;
 use Vitis\RestDB\Exceptions\RestDBAuthenticationException;
 use Vitis\RestDB\Exceptions\ResultTruncationException;
 use Vitis\RestDB\Http\Transport;
@@ -24,8 +25,12 @@ use Vitis\RestDB\Query\Processor;
 use Vitis\RestDB\Values\ApiResponse;
 use Vitis\RestDB\Values\CompiledRequest;
 use Vitis\RestDB\Values\ConnectionConfig;
+use Vitis\RestDB\Values\DeleteIntent;
 use Vitis\RestDB\Values\EmptyResult;
+use Vitis\RestDB\Values\InsertIntent;
 use Vitis\RestDB\Values\SelectIntent;
+use Vitis\RestDB\Values\UpdateIntent;
+use Vitis\RestDB\Values\WriteResult;
 
 /**
  * Owns no API knowledge — sequences contracts: compile → page → send → parse →
@@ -35,6 +40,8 @@ use Vitis\RestDB\Values\SelectIntent;
 class RestConnection extends Connection
 {
     private readonly CapabilityGate $capabilityGate;
+
+    private ?WriteResult $lastWriteResult = null;
 
     /** @param array<string, mixed> $config */
     public function __construct(
@@ -176,7 +183,7 @@ class RestConnection extends Connection
     }
 
     /** Null = 404, which reads as "no matching resource" — zero rows, not an error. */
-    private function sendAndMap(CompiledRequest $request): ?ApiResponse
+    private function sendAndMap(CompiledRequest $request, bool $missingAsEmpty = true): ?ApiResponse
     {
         $response = $this->transport->send($request);
 
@@ -184,12 +191,19 @@ class RestConnection extends Connection
             return $response;
         }
 
-        if ($response->status === 404) {
+        if ($response->status === 404 && $missingAsEmpty) {
             return null;
         }
 
         if ($response->status === 401) {
             throw RestDBAuthenticationException::unauthorized($this->connectionConfig->name);
+        }
+
+        if ($response->status === 422) {
+            throw ApiValidationException::fromErrorBag(
+                $this->connectionConfig->name,
+                $this->parser->errors($response),
+            );
         }
 
         throw ApiResponseException::fromResponse(
@@ -295,22 +309,84 @@ class RestConnection extends Connection
         } while (($request = $this->paginator->nextRequest($request, $info)) !== null);
     }
 
-    /** @param array<mixed> $bindings */
-    public function insert($query, $bindings = []): never
+    /**
+     * @param  InsertIntent|string  $query
+     * @param  array<mixed>  $bindings
+     */
+    public function insert($query, $bindings = []): bool
     {
-        throw new LogicException('The restdb write path ships in v0.3.');
+        if (! $query instanceof InsertIntent) {
+            throw new LogicException('RestConnection::insert() expects an InsertIntent.');
+        }
+
+        $compiled = $this->compiler->compileInsert($query);
+        $result = new WriteResult(affected: 0);
+
+        $this->run($compiled->requestLine(), [], function () use ($compiled, $query, &$result): bool {
+            // A 404 on create means the endpoint itself is missing — config error.
+            $response = $this->sendAndMap($compiled, missingAsEmpty: false);
+            \assert($response instanceof ApiResponse);
+
+            $result = $this->parser->writeResult($response, $query);
+
+            return true;
+        });
+
+        $this->lastWriteResult = $result;
+
+        return $result->affected > 0;
     }
 
-    /** @param array<mixed> $bindings */
-    public function update($query, $bindings = []): never
+    /**
+     * @param  UpdateIntent|string  $query
+     * @param  array<mixed>  $bindings
+     */
+    public function update($query, $bindings = []): int
     {
-        throw new LogicException('The restdb write path ships in v0.3.');
+        if (! $query instanceof UpdateIntent) {
+            throw new LogicException('RestConnection::update() expects an UpdateIntent.');
+        }
+
+        return $this->write($this->compiler->compileUpdate($query), $query);
     }
 
-    /** @param array<mixed> $bindings */
-    public function delete($query, $bindings = []): never
+    /**
+     * @param  DeleteIntent|string  $query
+     * @param  array<mixed>  $bindings
+     */
+    public function delete($query, $bindings = []): int
     {
-        throw new LogicException('The restdb write path ships in v0.3.');
+        if (! $query instanceof DeleteIntent) {
+            throw new LogicException('RestConnection::delete() expects a DeleteIntent.');
+        }
+
+        return $this->write($this->compiler->compileDelete($query), $query);
+    }
+
+    /** Server-side state of the last write on this connection — used to re-fill models. */
+    public function lastWriteResult(): ?WriteResult
+    {
+        return $this->lastWriteResult;
+    }
+
+    private function write(CompiledRequest $compiled, UpdateIntent|DeleteIntent $intent): int
+    {
+        $result = new WriteResult(affected: 0);
+
+        $this->run($compiled->requestLine(), [], function () use ($compiled, $intent, &$result): bool {
+            $response = $this->sendAndMap($compiled, missingAsEmpty: true);
+
+            // 404: the resource is already gone — zero rows affected.
+            if ($response !== null) {
+                $result = $this->parser->writeResult($response, $intent);
+            }
+
+            return true;
+        });
+
+        $this->lastWriteResult = $result;
+
+        return $result->affected;
     }
 
     /** @param array<mixed> $bindings */

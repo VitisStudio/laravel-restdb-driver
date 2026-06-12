@@ -11,10 +11,13 @@ use Vitis\RestDB\Capabilities\Operator;
 use Vitis\RestDB\Connection\RestConnection;
 use Vitis\RestDB\Exceptions\UnsupportedQueryException;
 use Vitis\RestDB\Values\Condition;
+use Vitis\RestDB\Values\DeleteIntent;
 use Vitis\RestDB\Values\FilterGroup;
+use Vitis\RestDB\Values\InsertIntent;
 use Vitis\RestDB\Values\Order;
 use Vitis\RestDB\Values\PageRequest;
 use Vitis\RestDB\Values\SelectIntent;
+use Vitis\RestDB\Values\UpdateIntent;
 
 /**
  * Normalizes builder state into an immutable SelectIntent. This is phase 2 of
@@ -39,7 +42,7 @@ final class IntentFactory
         $gate->ensure(Capability::Select, 'get', $model);
 
         $resource = self::resource($builder);
-        $filters = self::mapWheres($builder->wheres, $gate, $model);
+        $filters = self::mapWheres($builder->wheres, $gate, $model, $builder->keyName(), gateOperators: true);
 
         if ($filters->hasNestedGroups()) {
             $gate->ensure(Capability::FilterNested, 'where', $model);
@@ -59,6 +62,98 @@ final class IntentFactory
         );
     }
 
+    /** @param array<mixed> $values */
+    public static function insert(Builder $builder, array $values): InsertIntent
+    {
+        // Normalize Eloquent's two shapes: one row (assoc) or a list of rows.
+        $rows = array_is_list($values) ? $values : [$values];
+
+        if (count($rows) > 1) {
+            throw UnsupportedQueryException::batchInsert();
+        }
+
+        $normalized = [];
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                throw UnsupportedQueryException::whereType('insert row');
+            }
+
+            $normalized[] = self::attributes($row, 'insert()');
+        }
+
+        return new InsertIntent(self::resource($builder), $normalized);
+    }
+
+    /** @param array<mixed> $values */
+    public static function update(Builder $builder, array $values): UpdateIntent
+    {
+        return new UpdateIntent(
+            self::resource($builder),
+            self::attributes($values, 'update()'),
+            self::writeTarget($builder, 'update'),
+        );
+    }
+
+    public static function delete(Builder $builder): DeleteIntent
+    {
+        return new DeleteIntent(
+            self::resource($builder),
+            self::writeTarget($builder, 'delete'),
+        );
+    }
+
+    /**
+     * Writes target exactly one resource by primary key — anything else is a
+     * mass write, which REST cannot express transactionally. Operator
+     * capabilities do not apply: this is identity, not filtering.
+     */
+    private static function writeTarget(Builder $builder, string $method): FilterGroup
+    {
+        $connection = $builder->getConnection();
+        \assert($connection instanceof RestConnection);
+
+        $filters = self::mapWheres($builder->wheres, $connection->gate(), $builder->getModelContext(), $builder->keyName(), gateOperators: false);
+        $items = $filters->items;
+
+        $single = count($items) === 1
+            && $items[0] instanceof Condition
+            && $items[0]->column === $builder->keyName()
+            && $items[0]->boolean === 'and'
+            && ($items[0]->operator === Operator::Eq
+                || ($items[0]->operator === Operator::In && is_array($items[0]->value) && count($items[0]->value) === 1));
+
+        if (! $single) {
+            throw UnsupportedQueryException::massWrite($method);
+        }
+
+        return $filters;
+    }
+
+    /**
+     * @param  array<mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private static function attributes(array $attributes, string $context): array
+    {
+        $result = [];
+
+        foreach ($attributes as $key => $value) {
+            if (! is_string($key)) {
+                throw UnsupportedQueryException::rawExpression($context.' (non-string attribute key)');
+            }
+
+            if ($value instanceof Expression) {
+                throw UnsupportedQueryException::rawExpression($context);
+            }
+
+            // Strip qualified attribute names the same way wheres are stripped.
+            $result[str_contains($key, '.') ? substr((string) strrchr($key, '.'), 1) : $key] = $value;
+        }
+
+        return $result;
+    }
+
     private static function resource(Builder $builder): string
     {
         $from = $builder->from;
@@ -75,7 +170,7 @@ final class IntentFactory
     }
 
     /** @param array<mixed> $wheres */
-    private static function mapWheres(array $wheres, CapabilityGate $gate, ?string $model): FilterGroup
+    private static function mapWheres(array $wheres, CapabilityGate $gate, ?string $model, string $keyName, bool $gateOperators, int $depth = 0): FilterGroup
     {
         $items = [];
 
@@ -99,7 +194,7 @@ final class IntentFactory
                     throw UnsupportedQueryException::whereType('Nested');
                 }
 
-                $group = self::mapWheres($query->wheres, $gate, $model);
+                $group = self::mapWheres($query->wheres, $gate, $model, $keyName, $gateOperators, $depth + 1);
 
                 // A pure-AND nested group under an AND boolean is flattenable —
                 // key-value array wheres should not demand filter.nested.
@@ -112,14 +207,14 @@ final class IntentFactory
                 continue;
             }
 
-            $items[] = self::condition($type, $where, $boolean, $gate, $model);
+            $items[] = self::condition($type, $where, $boolean, $gate, $model, $keyName, $gateOperators, $depth);
         }
 
         return new FilterGroup($items);
     }
 
     /** @param array<mixed> $where */
-    private static function condition(string $type, array $where, string $boolean, CapabilityGate $gate, ?string $model): Condition
+    private static function condition(string $type, array $where, string $boolean, CapabilityGate $gate, ?string $model, string $keyName, bool $gateOperators, int $depth): Condition
     {
         $column = self::column($where['column'] ?? null);
         $qualified = str_contains($column, '.');
@@ -145,7 +240,16 @@ final class IntentFactory
             $value = [$value];
         }
 
-        $gate->ensureOperator($operator, 'where', $model);
+        // Top-level AND primary-key equality is identity targeting, not a
+        // filter — exempt from operator capabilities (mirrors the eager gate).
+        $identity = $depth === 0
+            && $boolean === 'and'
+            && $column === $keyName
+            && in_array($operator, [Operator::Eq, Operator::In], true);
+
+        if ($gateOperators && ! $identity) {
+            $gate->ensureOperator($operator, 'where', $model);
+        }
 
         return new Condition($column, $operator, $value, $boolean);
     }

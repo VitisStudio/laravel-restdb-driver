@@ -48,8 +48,28 @@ final class AuthenticatorResolver
             ),
             'api_key' => ApiKeyAuthenticator::fromConfig($auth, $config->name),
             'oauth2_client_credentials' => $this->clientCredentials($auth, $config),
+            'oauth2_refresh_token' => $this->refreshToken($auth, $config),
             default => $this->custom($driver, $registry, $config),
         };
+    }
+
+    /** @param array<string, mixed> $auth */
+    private function refreshToken(array $auth, ConnectionConfig $config): RefreshTokenAuthenticator
+    {
+        $store = $auth['cache_store'] ?? null;
+        $skew = $auth['expiry_skew'] ?? 60;
+
+        return new RefreshTokenAuthenticator(
+            $this->container->make(Factory::class),
+            $this->container->make(\Illuminate\Http\Client\Factory::class),
+            $config->name,
+            $this->requireString($auth, 'token_url', $config->name),
+            $this->requireString($auth, 'client_id', $config->name),
+            $this->requireString($auth, 'client_secret', $config->name),
+            $this->requireString($auth, 'refresh_token', $config->name),
+            is_string($store) ? $store : null,
+            is_int($skew) ? $skew : 60,
+        );
     }
 
     /** @param array<string, mixed> $auth */
