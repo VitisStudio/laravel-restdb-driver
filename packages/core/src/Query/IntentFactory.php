@@ -52,12 +52,17 @@ final class IntentFactory
             $gate->ensure(Capability::FilterOr, 'orWhere', $model);
         }
 
+        if ($builder->includes !== []) {
+            $gate->ensure(Capability::Include, 'with', $model);
+        }
+
         return new SelectIntent(
             resource: $resource,
             columns: self::columns($builder, $gate, $model),
             filters: $filters,
             orders: self::orders($builder, $gate, $model),
             page: self::page($builder, $gate, $model, $forcedLimit),
+            includes: $builder->includes,
             aggregate: self::aggregate($builder, $gate, $model),
         );
     }

@@ -49,6 +49,25 @@ abstract class TestCase extends Orchestra
         $this->app['db']->purge('testapi');
     }
 
+    /**
+     * A JSON:API connection on the preconfigured adapter.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    public function defineJsonApiConnection(array $overrides = []): void
+    {
+        config()->set('database.connections.jsonapi', array_replace([
+            'driver' => 'restdb',
+            'adapter' => 'json-api',
+            'base_url' => 'https://jsonapi.test',
+            'pagination' => ['strategy' => 'page-number', 'size' => 10],
+            'filter_dialect' => 'comma-list',
+            'capabilities' => [],
+        ], $overrides));
+
+        $this->app['db']->purge('jsonapi');
+    }
+
     /** Broad capability set for tests that exercise behavior, not gating. */
     public function defineOpenApiConnection(array $overrides = []): void
     {

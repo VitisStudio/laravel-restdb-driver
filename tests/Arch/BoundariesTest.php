@@ -31,16 +31,17 @@ arch('capabilities depend on nothing from core or jsonapi')
     ->expect('Vitis\RestDB\Capabilities')
     ->not->toUse([...$coreInternals, 'Vitis\RestDB\JsonApi']);
 
-// jsonapi may use the contracts package and core's public API (Eloquent trait,
-// adapter registry, exceptions) — never core internals.
+// jsonapi may use the contracts package and core's public API — the Eloquent
+// layer, RestConnection's accessors, the endpoint resolver, registry, and
+// exceptions. The Query builder, HTTP transport, and auth subsystem are
+// internals: if JSON:API ever needs a private hook there, the contracts are
+// wrong; fix the contracts.
 arch('jsonapi never reaches into core internals')
     ->expect('Vitis\RestDB\JsonApi')
     ->not->toUse([
         'Vitis\RestDB\Query',
-        'Vitis\RestDB\Connection',
         'Vitis\RestDB\Http',
         'Vitis\RestDB\Auth',
-        'Vitis\RestDB\Endpoints',
     ]);
 
 // core never references the jsonapi package — it must stay installable alone.

@@ -102,6 +102,12 @@ class RestConnection extends Connection
         return $this->connectionConfig;
     }
 
+    /** The adapter's parser — adapter Eloquent builders read side-load state from it. */
+    public function parser(): ResponseParser
+    {
+        return $this->parser;
+    }
+
     /** Compile an intent without executing it — powers Builder::toRequest(). */
     public function compile(SelectIntent $intent): CompiledRequest|EmptyResult
     {

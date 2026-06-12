@@ -35,6 +35,14 @@ class Builder extends \Illuminate\Database\Query\Builder
     /** True once select()/addSelect() was called explicitly by the developer. */
     protected bool $explicitColumns = false;
 
+    /**
+     * Relation paths to side-load (compound documents / eager side-load).
+     * Set by adapter-specific Eloquent builders; gated on select.include.
+     *
+     * @var list<string>
+     */
+    public array $includes = [];
+
     public function setModelContext(?string $model): void
     {
         $this->modelContext = $model;
@@ -65,6 +73,7 @@ class Builder extends \Illuminate\Database\Query\Builder
         $query = new static($this->connection, $this->grammar, $this->processor);
         $query->modelContext = $this->modelContext;
         $query->keyName = $this->keyName;
+        $query->includes = $this->includes;
 
         return $query;
     }

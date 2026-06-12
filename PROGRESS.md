@@ -1,5 +1,45 @@
 # Progress Log
 
+## G4 — JSON:API adapter ✅
+
+**Shipped** (`packages/jsonapi`, registers itself via its own provider)
+- `JsonApiRequestCompiler`: filter/sort/fields[type]/include/page params,
+  vnd.api+json headers; a lone primary-key equality compiles to the resource
+  URL (`GET /posts/42` — identity, not filtering); writes are typed resource
+  documents (POST, dirty-only PATCH with type+id, DELETE).
+- `JsonApiResponseParser`: flattens data to snake_case rows via NameMapper
+  (camel default, kebab/none configurable), exposes to-one linkage as
+  `{relation}_id`, builds a (type,id) identity map over data + included that
+  accumulates across pages, maps error-document pointers to field-keyed
+  validation messages.
+- **Compound-document eager loading**: unconstrained `with()` paths ride
+  `include=` and hydrate from the identity map — `with('comments.author')`
+  costs zero extra HTTP, recursively. Constrained closures, missing linkage,
+  or disabled `select.include` fall back to standard eager-load queries;
+  all-or-nothing per relation, nothing partial, nothing dropped.
+- Three paginators (page-number / offset / cursor) sharing `links.next`
+  followed verbatim; TotalCount contributed only when `pagination.meta_total`
+  is configured. Two dialects (comma-list default, nested-operator) whose
+  `supports()` feeds the connection's operator capabilities. Honest baseline:
+  spec-guaranteed capabilities only.
+- `IsJsonApiResource` trait: composes the core trait, string non-incrementing
+  keys, the compound-document Eloquent builder.
+- Tests: 127 passing — wire-format assertions, dialect operator granting,
+  links.next drains, zero-extra-HTTP include hydration (nested + null +
+  to-many empty), constrained/missing-linkage fallbacks, JSON:API writes, 422
+  pointer mapping.
+
+**Notes / deferrals**
+- Conformance kit ships in G7; its cases are currently covered inline.
+- `Relation::noConstraints` is required when instantiating relations for
+  hydration — relation constructors otherwise push gated wheres (HasMany's
+  whereNotNull) onto a query that never runs.
+- Eloquent's `getModels()` hydrates through a fresh builder via
+  `$this->model->hydrate()`; the JSON:API builder hydrates through itself so
+  linkage lands on the right instance.
+
+
+
 ## G3 — Write path ✅
 
 **Shipped**

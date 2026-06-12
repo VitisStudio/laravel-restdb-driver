@@ -35,15 +35,22 @@ trait InteractsWithRestApi
 
     public function newEloquentBuilder($query)
     {
-        // The base query builder carries the model class so capability
-        // exceptions can name the model at the developer's line, and the key
-        // name so identity wheres bypass filter capabilities.
+        $this->configureRestQueryBuilder($query);
+
+        return new Builder($query);
+    }
+
+    /**
+     * The base query builder carries the model class so capability exceptions
+     * can name the model at the developer's line, and the key name so identity
+     * wheres bypass filter capabilities. Adapter traits reuse this hook.
+     */
+    protected function configureRestQueryBuilder(mixed $query): void
+    {
         if ($query instanceof \Vitis\RestDB\Query\Builder) {
             $query->setModelContext(static::class);
             $query->setKeyName($this->getKeyName());
         }
-
-        return new Builder($query);
     }
 
     protected function performInsert(\Illuminate\Database\Eloquent\Builder $query)

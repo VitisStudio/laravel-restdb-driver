@@ -13,3 +13,6 @@ parameters:
         -
             identifier: trait.unused
             path: packages/core/src/Eloquent/InteractsWithRestApi.php
+        -
+            identifier: trait.unused
+            path: packages/jsonapi/src/IsJsonApiResource.php
