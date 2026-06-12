@@ -151,6 +151,11 @@ adapter (`php artisan demo:crm`): dollar-operator filters, compound-document
 eager loading, total-based pagination against a server that sends no `links`,
 and typed writes via `resource_types`.
 
+[`examples/filament-crm`](examples/filament-crm) goes further: a **Filament
+v5 admin panel** with full CRUD resources and relation managers for the same
+three models — tables, filters, forms, and relation managers all running on
+HTTP through the driver instead of SQL.
+
 ## Development
 
 ```bash

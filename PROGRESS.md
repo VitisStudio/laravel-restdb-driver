@@ -1,5 +1,34 @@
 # Progress Log
 
+## G10 — Filament v5 admin panel over the driver ✅
+
+**Shipped** (`examples/filament-crm` + two core fixes)
+- Full Filament v5.6 panel on Laravel 12 where the "database" is the
+  hatchify mock JSON:API server: Author/Post/Comment resources with
+  complete CRUD (list/sort/filter/paginate, view infolists, create/edit
+  forms with `Select::relationship()` options from the API, dirty-only
+  PATCH, delete with confirmation), plus relation managers on view AND
+  edit pages (author→posts, post→comments) scoped through relationship
+  queries — verified end to end in a real browser against the live mock.
+- **Core fixes Filament forced** (an admin framework exercises Eloquent
+  harder than hand-written code):
+  - `toBase()->getCountForPagination()` — Filament counts before it
+    paginates; previously a "lands in v0.5" throw, now answered through
+    the same one-request count emulation as `count()`. Eloquent
+    `paginate()` also accepts a caller-supplied total as fallback.
+  - Null-operator gating moved from clause time to intent-build time:
+    Filament constructs `BelongsTo` relations on unsaved models (null FK →
+    `whereNull(ownerKey)`) purely to read metadata — eager gating threw on
+    queries that never execute. Executed null filters still throw before
+    any HTTP; regression tests cover both sides.
+- Honest limitation, documented: Filament search (global + per-column)
+  compiles to OR groups the dollar dialect cannot express — disabled in
+  the example rather than silently wrong.
+- Tests: 200 passing. Pint (example excluded — generated/skeleton style)
+  + Larastan max clean.
+
+
+
 ## G9 — Mock JSON:API server + what a real strict server forced ✅
 
 **Shipped** (`tools/mock-jsonapi` + jsonapi adapter additions)
