@@ -245,6 +245,3 @@ composer monorepo:validate
 
 Packages are split to read-only mirrors on tag via
 `monorepo-split-github-action` (requires the `SPLIT_ACCESS_TOKEN` secret).
-See [PROGRESS.md](PROGRESS.md) for the build log and
-[plan.html](plan.html) / [architecture.html](architecture.html) for the
-design.
