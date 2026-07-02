@@ -132,9 +132,10 @@ class RestConnection extends Connection
     /**
      * @param  SelectIntent|string  $query
      * @param  array<mixed>  $bindings
+     * @param  array<mixed>  $fetchUsing  present for Laravel 13 signature compatibility; unused (no PDO here)
      * @return list<array<string, mixed>>
      */
-    public function select($query, $bindings = [], $useReadPdo = true)
+    public function select($query, $bindings = [], $useReadPdo = true, array $fetchUsing = [])
     {
         if (! $query instanceof SelectIntent) {
             throw new LogicException('RestConnection::select() expects a SelectIntent — raw SQL has no meaning here.');
@@ -266,9 +267,10 @@ class RestConnection extends Connection
      *
      * @param  SelectIntent|string  $query
      * @param  array<mixed>  $bindings
+     * @param  array<mixed>  $fetchUsing  present for Laravel 13 signature compatibility; unused (no PDO here)
      * @return \Generator<int, \stdClass>
      */
-    public function cursor($query, $bindings = [], $useReadPdo = true): \Generator
+    public function cursor($query, $bindings = [], $useReadPdo = true, array $fetchUsing = []): \Generator
     {
         if (! $query instanceof SelectIntent) {
             throw new LogicException('RestConnection::cursor() expects a SelectIntent — raw SQL has no meaning here.');
