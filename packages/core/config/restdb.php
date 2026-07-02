@@ -81,6 +81,12 @@ return [
     |--------------------------------------------------------------------------
     | HTTP defaults
     |--------------------------------------------------------------------------
+    |
+    | Per-connection overrides live under the connection's own 'http' key,
+    | including 'middleware' => [Foo::class, ...] — invokable Guzzle
+    | handler-stack middleware for caching, rate limiting, or logging that the
+    | driver applies but does not own (see the README).
+    |
     */
 
     'http' => [
