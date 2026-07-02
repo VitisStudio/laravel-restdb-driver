@@ -26,11 +26,18 @@ final class Transport
     /** One refresh per send(), tracked per request cycle — never a loop. */
     private bool $refreshed = false;
 
+    /**
+     * @param  list<callable>  $middleware  resolved Guzzle handler-stack
+     *                                      middleware, applied in order (the
+     *                                      factory turns config class-strings
+     *                                      into instances)
+     */
     public function __construct(
         private readonly Factory $http,
         private readonly ConnectionConfig $config,
         private readonly Authenticator $authenticator,
         private readonly HttpOptions $options,
+        private readonly array $middleware = [],
     ) {}
 
     public function send(CompiledRequest $request): ApiResponse
@@ -78,6 +85,13 @@ final class Transport
             ->withHeaders($this->config->headers())
             ->timeout($this->options->timeout)
             ->connectTimeout($this->options->connectTimeout);
+
+        // User-registered Guzzle handler-stack middleware (caching, rate
+        // limiting, logging — none of it owned by this driver). Applied in
+        // registration order, before auth and retry wrap the request.
+        foreach ($this->middleware as $middleware) {
+            $pending = $pending->withMiddleware($middleware);
+        }
 
         $refreshable = $this->authenticator instanceof RefreshableAuthenticator;
         $attempts = max($this->options->retryTimes, $refreshable ? 2 : 1);

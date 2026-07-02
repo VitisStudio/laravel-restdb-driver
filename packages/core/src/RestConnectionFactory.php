@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Vitis\RestDB;
 
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Vitis\RestDB\Adapters\AdapterRegistry;
 use Vitis\RestDB\Auth\AuthenticatorResolver;
@@ -27,6 +28,7 @@ final class RestConnectionFactory
         private readonly AuthenticatorResolver $authenticators,
         private readonly HttpFactory $http,
         private readonly Repository $appConfig,
+        private readonly Container $container,
     ) {}
 
     /** @param array<string, mixed> $config */
@@ -69,11 +71,14 @@ final class RestConnectionFactory
             ConnectionConfig::stringKeyed($connectionConfig->get('capabilities')),
         );
 
+        $httpOptions = HttpOptions::fromConfig(ConnectionConfig::stringKeyed($config['http'] ?? null));
+
         $transport = new Transport(
             $this->http,
             $connectionConfig,
             $this->authenticators->resolve($connectionConfig, $this->authDriverRegistry()),
-            HttpOptions::fromConfig(ConnectionConfig::stringKeyed($config['http'] ?? null)),
+            $httpOptions,
+            $this->resolveMiddleware($httpOptions->middleware, $name),
         );
 
         return new RestConnection(
@@ -85,6 +90,38 @@ final class RestConnectionFactory
             $transport,
             $config,
         );
+    }
+
+    /**
+     * Resolve the connection's http.middleware class-strings into invokable
+     * Guzzle handler-stack middleware. The driver owns none of this behavior —
+     * caching, rate limiting, logging are the user's classes (or a third-party
+     * package like kevinrob/guzzle-cache-middleware). A class that resolves to
+     * something not callable is a configuration error, surfaced at wiring time.
+     *
+     * @param  list<class-string>  $classes
+     * @return list<callable>
+     */
+    private function resolveMiddleware(array $classes, string $connection): array
+    {
+        $resolved = [];
+
+        foreach ($classes as $class) {
+            $instance = $this->container->make($class);
+
+            if (! is_callable($instance)) {
+                throw InvalidConfigurationException::invalidClass(
+                    'http.middleware',
+                    $class,
+                    'a callable Guzzle handler-stack middleware (be __invoke-able)',
+                    $connection,
+                );
+            }
+
+            $resolved[] = $instance;
+        }
+
+        return $resolved;
     }
 
     /** @return array<string, class-string> */
