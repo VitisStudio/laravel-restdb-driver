@@ -19,6 +19,7 @@ jobs:
           - { dir: contracts, repo: restdb-contracts }
           - { dir: core, repo: restdb }
           - { dir: jsonapi, repo: restdb-jsonapi }
+          - { dir: openapi, repo: restdb-openapi }
     steps:
       - uses: actions/checkout@v4
 

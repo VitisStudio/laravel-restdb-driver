@@ -1,0 +1,24 @@
+{
+    "name": "vitis/restdb-openapi",
+    "description": "OpenAPI 3.0.3 model generator for the RestDB Eloquent driver",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "openapi", "oas", "rest", "driver"],
+    "require": {
+        "php": "^8.2",
+        "vitis/restdb": "^0.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vitis\\RestDB\\OpenApi\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Vitis\\RestDB\\OpenApi\\OpenApiServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

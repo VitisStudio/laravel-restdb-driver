@@ -19,12 +19,16 @@
         <testsuite name="jsonapi">
             <directory>packages/jsonapi/tests</directory>
         </testsuite>
+        <testsuite name="openapi">
+            <directory>packages/openapi/tests</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
             <directory>packages/contracts/src</directory>
             <directory>packages/core/src</directory>
             <directory>packages/jsonapi/src</directory>
+            <directory>packages/openapi/src</directory>
         </include>
     </source>
 </phpunit>

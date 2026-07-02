@@ -21,7 +21,8 @@
     "replace": {
         "vitis/restdb": "self.version",
         "vitis/restdb-contracts": "self.version",
-        "vitis/restdb-jsonapi": "self.version"
+        "vitis/restdb-jsonapi": "self.version",
+        "vitis/restdb-openapi": "self.version"
     },
     "autoload": {
         "psr-4": {
@@ -29,7 +30,8 @@
                 "packages/contracts/src/",
                 "packages/core/src/"
             ],
-            "Vitis\\RestDB\\JsonApi\\": "packages/jsonapi/src/"
+            "Vitis\\RestDB\\JsonApi\\": "packages/jsonapi/src/",
+            "Vitis\\RestDB\\OpenApi\\": "packages/openapi/src/"
         }
     },
     "autoload-dev": {

@@ -9,6 +9,7 @@ use Orchestra\Testbench\TestCase as Orchestra;
 use Tests\Fixtures\FakeCompiler;
 use Tests\Fixtures\FakeParser;
 use Vitis\RestDB\JsonApi\JsonApiServiceProvider;
+use Vitis\RestDB\OpenApi\OpenApiServiceProvider;
 use Vitis\RestDB\RestDBServiceProvider;
 
 abstract class TestCase extends Orchestra
@@ -25,6 +26,7 @@ abstract class TestCase extends Orchestra
         return [
             RestDBServiceProvider::class,
             JsonApiServiceProvider::class,
+            OpenApiServiceProvider::class,
         ];
     }
 

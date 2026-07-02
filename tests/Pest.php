@@ -8,4 +8,5 @@ pest()->extend(TestCase::class)->in(
     'Feature',
     '../packages/core/tests/Feature',
     '../packages/jsonapi/tests/Feature',
+    '../packages/openapi/tests/Feature',
 );
