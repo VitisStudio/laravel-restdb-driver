@@ -156,6 +156,11 @@ v5 admin panel** with full CRUD resources and relation managers for the same
 three models — tables, filters, forms, and relation managers all running on
 HTTP through the driver instead of SQL.
 
+## Requirements
+
+- PHP **8.2+**
+- Laravel **11, 12, or 13**
+
 ## Development
 
 ```bash
