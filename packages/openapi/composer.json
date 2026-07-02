@@ -5,6 +5,10 @@
     "keywords": ["laravel", "eloquent", "openapi", "oas", "rest", "driver"],
     "require": {
         "php": "^8.2",
+        "illuminate/console": "^11.0||^12.0||^13.0",
+        "illuminate/contracts": "^11.0||^12.0||^13.0",
+        "illuminate/database": "^11.0||^12.0||^13.0",
+        "illuminate/support": "^11.0||^12.0||^13.0",
         "vitis/restdb": "^0.1"
     },
     "autoload": {

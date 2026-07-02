@@ -13,7 +13,7 @@ return static function (MBConfig $mbConfig): void {
         'require-dev' => [
             'larastan/larastan' => '^3.0',
             'laravel/pint' => '^1.14',
-            'orchestra/testbench' => '^9.0||^10.0',
+            'orchestra/testbench' => '^9.0||^10.0||^11.0',
             'pestphp/pest' => '^3.0',
             'pestphp/pest-plugin-arch' => '^3.0',
             'symplify/monorepo-builder' => '^11.2',
