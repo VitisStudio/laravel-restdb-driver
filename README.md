@@ -17,6 +17,51 @@ $articles = Article::where('status', 'open')
 // GET https://api.example.com/v2/articles?filter[status]=open&filter[rating][gte]=4&sort=-createdAt&page[size]=25
 ```
 
+## How a query becomes an HTTP request
+
+```mermaid
+flowchart TD
+    M["Eloquent model<br/><code>Article::where(...)->get()</code>"] --> QB
+
+    subgraph core["vitis/restdb (core)"]
+        QB["Gated query builder<br/><small>Query\Builder</small>"]
+        GATE{{"Capability gate<br/><small>declared? else throw</small>"}}
+        IF["IntentFactory<br/><small>→ SelectIntent / Insert / Update / Delete</small>"]
+        CONN["RestConnection<br/><small>compile → drain → map</small>"]
+        TR["Transport<br/><small>PendingRequest, auth, retry</small>"]
+        PARSE["ResponseParser<br/><small>rows / writeResult / errors</small>"]
+        PAGE{"Paginator<br/><small>nextRequest?</small>"}
+    end
+
+    subgraph adapter["Adapter (generic · json-api · your own)"]
+        COMP["RequestCompiler<br/><small>intent → CompiledRequest</small>"]
+    end
+
+    MW["User middleware<br/><small>cache · rate limit · logging</small>"]
+    API[("REST API")]
+
+    QB --> GATE
+    GATE -- "ok" --> IF
+    GATE -- "unsupported" --> X["UnsupportedCapabilityException<br/><small>at your line</small>"]
+    IF --> CONN
+    CONN --> COMP
+    COMP --> CONN
+    CONN --> TR
+    TR --> MW
+    MW --> API
+    API --> TR
+    TR --> PARSE
+    PARSE --> PAGE
+    PAGE -- "more pages" --> TR
+    PAGE -- "done" --> HYDRATE["Hydrated models<br/><small>back to Eloquent</small>"]
+```
+
+Capabilities come from the adapter baseline, the paginator, an optional
+discovered manifest, and declared config (which always wins). The compiler,
+parser, and paginator are the adapter's job — `generic` shapes them from
+config/presets, `json-api` ships them preconfigured. Everything the connection
+can't do throws at the call site; nothing is silently dropped.
+
 This repository is a monorepo of four stacked packages:
 
 | Package                                        | Requires  | What it is                                                                                      |
