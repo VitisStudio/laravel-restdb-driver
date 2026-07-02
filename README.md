@@ -17,13 +17,14 @@ $articles = Article::where('status', 'open')
 // GET https://api.example.com/v2/articles?filter[status]=open&filter[rating][gte]=4&sort=-createdAt&page[size]=25
 ```
 
-This repository is a monorepo of three stacked packages:
+This repository is a monorepo of four stacked packages:
 
-| Package | Requires | What it is |
-| --- | --- | --- |
-| [`vitis/restdb-contracts`](packages/contracts) | nothing | The SPI: contracts, value objects, capability primitives |
-| [`vitis/restdb`](packages/core) | contracts | The driver: connection, gated builder, transport, auth, config-driven generic adapter + presets |
-| [`vitis/restdb-jsonapi`](packages/jsonapi) | core | A complete JSON:API v1.1 adapter, including spec-driven model generation |
+| Package                                        | Requires  | What it is                                                                                      |
+| ---------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| [`vitis/restdb-contracts`](packages/contracts) | nothing   | The SPI: contracts, value objects, capability primitives                                        |
+| [`vitis/restdb`](packages/core)                | contracts | The driver: connection, gated builder, transport, auth, config-driven generic adapter + presets |
+| [`vitis/restdb-jsonapi`](packages/jsonapi)     | core      | A complete JSON:API v1.1 adapter, including spec-driven model generation                        |
+| [`vitis/restdb-openapi`](packages/openapi)     | core      | Eloquent model generation from a plain OpenAPI 3.0.x spec (for the generic adapter)             |
 
 ## Quick start (plain REST backend)
 
@@ -33,7 +34,7 @@ composer require vitis/restdb
 
 Most plain REST APIs need **no code** — the generic adapter's compiler,
 parser, and paginator are shaped by config. For a known server framework,
-one preset line carries the whole wire format *and* the capabilities it
+one preset line carries the whole wire format _and_ the capabilities it
 honors:
 
 ```php
@@ -68,6 +69,24 @@ connection, or as a reusable named preset in `config/restdb.php`:
 
 Hand-written compiler/parser/paginator classes remain the escape hatch for
 APIs that outgrow configuration (`'compiler' => MyCompiler::class`).
+
+If the REST API publishes an **OpenAPI 3.0.x** document, generate the model
+classes from it instead of hand-writing them:
+
+```bash
+composer require vitis/restdb-openapi
+
+php artisan restdb:make-openapi-models jsonplaceholder \
+    --spec=storage/api-specs/openapi.json \
+    --path=app/Models --namespace="App\Models" \
+    --exclude=/uploadImage        # drop RPC action endpoints
+```
+
+It emits one committed model per schema exposed at a path — attributes and
+casts from the schema types, `belongsTo`/`hasMany` from `$ref`-to-a-resource
+relationships. Nested value objects and envelope schemas stay inline; nothing
+is invented from naming. See [`examples/petstore`](examples/petstore) for a
+runnable end-to-end demo.
 
 ## Quick start (JSON:API backend)
 
@@ -113,7 +132,7 @@ meta), `save` (dirty-only PATCH), `delete`.
 ## The capability system
 
 A connection can only do what it declares. The `generic` adapter starts from
-**nothing** — a preset *declares* what its named server framework honors, it
+**nothing** — a preset _declares_ what its named server framework honors, it
 never derives; the `json-api` adapter starts from what the spec guarantees.
 Capabilities layer bottom-up: adapter baseline → paginator contributions →
 discovered manifest (advisory) → declared config (always wins). Models may
@@ -129,11 +148,12 @@ Inspect any connection with `php artisan restdb:capabilities crm`.
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `restdb:capabilities {connection}` | Print the effective capability matrix |
-| `restdb:discover {connection} --spec= [--check]` | Spec → committed capability manifest (advisory; `--check` for CI) |
-| `restdb:make-models {connection} --spec= [--path= --namespace= --force]` | Spec → physical Eloquent classes |
+| Command                                                                  | Purpose                                                           |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `restdb:capabilities {connection}`                                       | Print the effective capability matrix                             |
+| `restdb:discover {connection} --spec= [--check]`                         | Spec → committed capability manifest (advisory; `--check` for CI) |
+| `restdb:make-models {connection} --spec= [--path= --namespace= --force]` | JSON:API spec → physical Eloquent classes (`vitis/restdb-jsonapi`) |
+| `restdb:make-openapi-models {connection} --spec= [--path= --namespace= --exclude= --force]` | OpenAPI 3.0.x spec → physical Eloquent classes (`vitis/restdb-openapi`) |
 
 ## Example app
 
@@ -157,6 +177,11 @@ and typed writes via `resource_types`.
 v5 admin panel** with full CRUD resources and relation managers for the same
 three models — tables, filters, forms, and relation managers all running on
 HTTP through the driver instead of SQL.
+
+[`examples/petstore`](examples/petstore) is a **Laravel 13** app whose models
+are generated from the real [Swagger Petstore](https://petstore3.swagger.io/)
+OpenAPI 3 spec via `restdb:make-openapi-models`, then run live against the
+Petstore API through the generic adapter (`php artisan demo`).
 
 ## Requirements
 
