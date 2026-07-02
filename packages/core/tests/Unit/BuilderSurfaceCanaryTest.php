@@ -12,7 +12,7 @@ use Illuminate\Database\Query\Builder as BaseBuilder;
  * the stub Grammar; unknown where types are caught by the IntentFactory
  * whitelist — but an audit beats a runtime exception.
  *
- * Audited against laravel/framework 12.x.
+ * Audited against laravel/framework 12.x and 13.x.
  */
 it('fails when Laravel ships builder surface we have not audited', function () {
     $audited = [
@@ -22,13 +22,14 @@ it('fails when Laravel ships builder surface we have not audited', function () {
         'cleanBindings', 'clone', 'cloneWithout', 'cloneWithoutBindings', 'count', 'crossJoin', 'crossJoinSub',
         'cursor', 'cursorPaginate', 'dd', 'ddRawSql', 'decrement', 'decrementEach', 'delete', 'distinct',
         'doesntExist', 'doesntExistOr', 'dump', 'dumpRawSql', 'dynamicWhere', 'each', 'eachById', 'exists',
-        'existsOr', 'explain', 'find', 'findOr', 'first', 'firstOrFail', 'forNestedWhere', 'forPage',
+        'existsOr', 'explain', 'fetchUsing', 'find', 'findOr', 'first', 'firstOrFail', 'forNestedWhere', 'forPage',
         'forPageAfterId', 'forPageBeforeId', 'forceIndex', 'from', 'fromRaw', 'fromSub', 'get', 'getBindings',
         'getColumns', 'getConnection', 'getCountForPagination', 'getGrammar', 'getLimit', 'getOffset',
         'getProcessor', 'getRawBindings', 'groupBy', 'groupByRaw', 'groupLimit', 'having', 'havingBetween',
         'havingNested', 'havingNotBetween', 'havingNotNull', 'havingNull', 'havingRaw', 'ignoreIndex', 'implode',
         'inOrderOf', 'inRandomOrder', 'increment', 'incrementEach', 'insert', 'insertGetId', 'insertOrIgnore',
-        'insertOrIgnoreUsing', 'insertUsing', 'join', 'joinLateral', 'joinSub', 'joinWhere', 'latest', 'lazy',
+        'insertOrIgnoreReturning', 'insertOrIgnoreUsing', 'insertUsing', 'join', 'joinLateral', 'joinSub',
+        'joinWhere', 'latest', 'lazy',
         'lazyById', 'lazyByIdDesc', 'leftJoin', 'leftJoinLateral', 'leftJoinSub', 'leftJoinWhere', 'limit',
         'lock', 'lockForUpdate', 'macroCall', 'max', 'mergeBindings', 'mergeWheres', 'min', 'newQuery',
         'numericAggregate', 'offset', 'oldest', 'orHaving', 'orHavingBetween', 'orHavingNotBetween',
@@ -46,7 +47,8 @@ it('fails when Laravel ships builder surface we have not audited', function () {
         'orderByVectorDistance', 'orderedChunkById', 'paginate', 'pipe', 'pluck', 'prepareValueAndOperator',
         'raw', 'rawValue', 'reorder', 'reorderDesc', 'rightJoin', 'rightJoinSub', 'rightJoinWhere', 'select',
         'selectExpression', 'selectRaw', 'selectSub', 'selectVectorDistance', 'setBindings', 'sharedLock',
-        'simplePaginate', 'skip', 'sole', 'soleValue', 'sum', 'take', 'tap', 'timeout', 'toRawSql', 'toSql',
+        'simplePaginate', 'skip', 'sole', 'soleValue', 'straightJoin', 'straightJoinSub', 'straightJoinWhere',
+        'sum', 'take', 'tap', 'timeout', 'toRawSql', 'toSql',
         'truncate', 'union', 'unionAll', 'unless', 'update', 'updateFrom', 'updateOrInsert', 'upsert',
         'useIndex', 'useWritePdo', 'value', 'when', 'where', 'whereAfterToday', 'whereAll', 'whereAny',
         'whereBeforeToday', 'whereBetween', 'whereBetweenColumns', 'whereColumn', 'whereDate', 'whereDay',

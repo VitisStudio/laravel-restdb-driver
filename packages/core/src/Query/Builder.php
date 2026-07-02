@@ -444,6 +444,21 @@ class Builder extends \Illuminate\Database\Query\Builder
         $this->unsupported('crossJoin');
     }
 
+    public function straightJoin($table, $first, $operator = null, $second = null): never
+    {
+        $this->unsupported('straightJoin');
+    }
+
+    public function straightJoinWhere($table, $first, $operator, $second): never
+    {
+        $this->unsupported('straightJoinWhere');
+    }
+
+    public function straightJoinSub($query, $as, $first, $operator = null, $second = null): never
+    {
+        $this->unsupported('straightJoinSub');
+    }
+
     public function union($query, $all = false): never
     {
         $this->unsupported('union');
@@ -695,10 +710,16 @@ class Builder extends \Illuminate\Database\Query\Builder
         }
 
         $where = $this->wheres[0];
+
+        if (! is_array($where)) {
+            return false;
+        }
+
         $type = $where['type'] ?? null;
         $column = $where['column'] ?? null;
+        $boolean = $where['boolean'] ?? 'and';
 
-        if (! is_string($column) || $this->isOr($where['boolean'] ?? 'and')) {
+        if (! is_string($column) || ! is_string($boolean) || $this->isOr($boolean)) {
             return false;
         }
 

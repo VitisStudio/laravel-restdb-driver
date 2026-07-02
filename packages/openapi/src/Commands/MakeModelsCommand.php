@@ -148,6 +148,7 @@ final class MakeModelsCommand extends Command
             return false;
         }
 
+        /** @var list<string> $reserved */
         static $reserved = [
             'abstract', 'and', 'array', 'as', 'break', 'callable', 'case', 'catch',
             'class', 'clone', 'const', 'continue', 'declare', 'default', 'do', 'echo',
