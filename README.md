@@ -1,4 +1,6 @@
-# RestDB
+<p align="center">
+  <img src="art/hero.jpg" alt="RestDB — Eloquent over any REST API" width="900">
+</p>
 
 **An Eloquent database driver for RESTful APIs.** Anything that talks to an
 Eloquent model can talk to this driver without knowing it isn't a database —
