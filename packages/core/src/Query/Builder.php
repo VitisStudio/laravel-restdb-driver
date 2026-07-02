@@ -183,7 +183,13 @@ class Builder extends \Illuminate\Database\Query\Builder
 
     public function limit($value)
     {
-        $this->gate()->ensure(Capability::Limit, 'limit', $this->modelContext);
+        // limit(1) riding on a lone primary-key equality is find()/first()-by-key:
+        // the compiler emits a resource GET and the limit never reaches the wire,
+        // so it is identity targeting, not paging — same doctrine as
+        // isIdentityWhere(). Anything else is real pagination and stays gated.
+        if ($value !== 1 || ! $this->hasLoneIdentityWhere()) {
+            $this->gate()->ensure(Capability::Limit, 'limit', $this->modelContext);
+        }
 
         return parent::limit($value);
     }
@@ -673,6 +679,37 @@ class Builder extends \Illuminate\Database\Query\Builder
 
         return $name === $this->keyName
             && in_array($operator, [Operator::Eq, Operator::In], true);
+    }
+
+    /**
+     * True when the accumulated wheres are exactly one primary-key equality —
+     * the shape Eloquent's find()/whereKey()->first() builds. The compiler
+     * resolves that to a resource GET (identityTarget), so a limit(1) on top
+     * carries no paging semantics. Public: the IntentFactory applies the same
+     * exemption at compile time (phase 2).
+     */
+    public function hasLoneIdentityWhere(): bool
+    {
+        if (count($this->wheres) !== 1) {
+            return false;
+        }
+
+        $where = $this->wheres[0];
+        $type = $where['type'] ?? null;
+        $column = $where['column'] ?? null;
+
+        if (! is_string($column) || $this->isOr($where['boolean'] ?? 'and')) {
+            return false;
+        }
+
+        $name = str_contains($column, '.') ? substr((string) strrchr($column, '.'), 1) : $column;
+
+        if ($name !== $this->keyName) {
+            return false;
+        }
+
+        return ($type === 'Basic' && ($where['operator'] ?? null) === '=')
+            || ($type === 'In' && is_array($where['values'] ?? null) && count($where['values']) === 1);
     }
 
     protected function unsupported(string $method): never

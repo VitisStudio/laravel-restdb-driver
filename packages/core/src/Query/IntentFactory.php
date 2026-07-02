@@ -441,7 +441,10 @@ final class IntentFactory
         $offset = $builder->offset;
         $page = $builder->pageNumber;
 
-        if ($limit !== null) {
+        // limit(1) over a lone primary-key equality is find()/first()-by-key —
+        // the compiler turns it into a resource GET and the limit never reaches
+        // the wire. Identity targeting, not paging; same exemption as phase 1.
+        if ($limit !== null && ! ($limit === 1 && $builder->hasLoneIdentityWhere())) {
             $gate->ensure(Capability::Limit, 'limit', $model);
         }
 

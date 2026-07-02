@@ -176,6 +176,27 @@ it('proceeds when the capability is present', function (string $needle, array $w
     expect(true)->toBeTrue();
 })->with('capability matrix');
 
+it('serves find() without page.limit — identity limit is not paging', function () {
+    $this->defineApiConnection(['select' => true]);
+    Http::fake(['*' => Http::response(null, 404)]);
+
+    // find() builds whereKey()->limit(1); the key equality makes it a resource
+    // GET, so the limit is identity targeting, not paging — no capability
+    // exception, and the request actually goes out (404 maps to null).
+    expect(Article::query()->find(42))->toBeNull();
+    Http::assertSentCount(1);
+});
+
+it('still gates first() as paging when no key equality is present', function () {
+    $this->defineApiConnection(['select' => true]);
+    Http::fake(['*' => Http::response(['data' => [], 'count' => 0])]);
+
+    expect(fn () => Article::query()->first())
+        ->toThrow(UnsupportedCapabilityException::class, 'page.limit');
+
+    Http::assertNothingSent();
+});
+
 it('names the model, method, and fix in the exception', function () {
     $this->defineApiConnection(['select' => true]);
 
