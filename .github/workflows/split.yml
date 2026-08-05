@@ -1,9 +1,16 @@
 name: Split Packages
 
 # On every tag, push each package directory to its read-only mirror so
-# Packagist can serve vitisstudio/restdb-contracts, vitisstudio/restdb, and
-# vitisstudio/restdb-jsonapi as individually installable packages.
-# Requires a SPLIT_ACCESS_TOKEN secret with repo scope.
+# Packagist can serve vitisstudio/restdb-contracts, vitisstudio/restdb,
+# vitisstudio/restdb-jsonapi, and vitisstudio/restdb-openapi as individually
+# installable packages.
+#
+# Prerequisites:
+#   1. The four target repositories exist under the VitisStudio organization.
+#   2. A SPLIT_ACCESS_TOKEN secret holds a token with write access to them
+#      (classic: 'repo' scope; fine-grained: Contents read/write on each).
+# The action pushes the package directory to the target's default branch and
+# creates the tag there; it does not need the monorepo's full history.
 
 on:
   push:
@@ -23,7 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: symplify/monorepo-split-github-action@v2.3.0
+      # Renamed from symplify/monorepo-split-github-action; the old path only
+      # resolves through a redirect.
+      - uses: danharrin/monorepo-split-github-action@v2.4.5
         env:
           GITHUB_TOKEN: ${{ secrets.SPLIT_ACCESS_TOKEN }}
         with:
