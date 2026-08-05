@@ -81,9 +81,19 @@ jobs:
           php-version: '8.4'
           coverage: none
 
+      # Track laravel/framework itself, not the illuminate/* read-only splits:
+      # the framework `replace`s those, so requiring both concrete split
+      # packages and the framework (pulled in by testbench) is unsatisfiable.
+      #
+      # Pin the branch rather than dev-master — the framework's stale
+      # branch-alias maps dev-master to 13.0.x-dev, which cannot satisfy
+      # testbench's ^13.23.0. Bump both branches when Laravel 14 opens.
       - name: Install bleeding-edge framework
         run: |
-          composer require "illuminate/contracts:dev-master" "illuminate/database:dev-master" "illuminate/http:dev-master" --no-interaction --no-update
+          composer config minimum-stability dev
+          composer config prefer-stable true
+          composer require "laravel/framework:13.x-dev" --no-interaction --no-update
+          composer require "orchestra/testbench:11.x-dev" --dev --no-interaction --no-update
           composer update --prefer-dist --no-interaction --no-progress
 
       - name: Pest
