@@ -6,6 +6,29 @@ on:
   pull_request:
 
 jobs:
+  # Runs outside the test matrix on purpose. The matrix pins the root
+  # composer.json to one cell's versions ('12.*') before installing, which by
+  # design no longer matches the packages' declared ranges — validate would
+  # then report a conflict that exists only in CI. It checks the committed
+  # tree, so it needs an unpinned checkout.
+  validate:
+    runs-on: ubuntu-latest
+    name: Monorepo validate
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      # composer.lock is gitignored, so resolve fresh rather than install.
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Monorepo validate
+        run: vendor/bin/monorepo-builder validate --ansi
+
   tests:
     runs-on: ubuntu-latest
     strategy:
@@ -38,9 +61,6 @@ jobs:
           composer require "illuminate/contracts:${{ matrix.laravel }}" "illuminate/database:${{ matrix.laravel }}" "illuminate/http:${{ matrix.laravel }}" --no-interaction --no-update
           composer require "orchestra/testbench:${{ matrix.testbench }}" --dev --no-interaction --no-update
           composer update --prefer-dist --no-interaction --no-progress
-
-      - name: Monorepo validate
-        run: vendor/bin/monorepo-builder validate --ansi
 
       - name: Pint
         run: vendor/bin/pint --test
