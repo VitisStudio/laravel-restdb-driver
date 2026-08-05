@@ -6,6 +6,7 @@ namespace Vitis\RestDB\Query;
 
 use BadMethodCallException;
 use Closure;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Support\LazyCollection;
 use LogicException;
 use Vitis\RestDB\Capabilities\Capability;
@@ -444,16 +445,42 @@ class Builder extends \Illuminate\Database\Query\Builder
         $this->unsupported('crossJoin');
     }
 
+    // The straight-join trio is Laravel 13 surface — absent from 12.x. The
+    // neighbours above inherit their parameter types from the parent docblock,
+    // but on 12.x these override nothing, so they must carry their own or
+    // static analysis sees untyped parameters. Types mirror 13.x exactly.
+    // Native types are not an option: the parent leaves these untyped, and
+    // narrowing a parameter in an override is a fatal signature violation.
+
+    /**
+     * @param  Expression|string  $table
+     * @param  Closure|string  $first
+     * @param  string|null  $operator
+     * @param  Expression|string|null  $second
+     */
     public function straightJoin($table, $first, $operator = null, $second = null): never
     {
         $this->unsupported('straightJoin');
     }
 
+    /**
+     * @param  Expression|string  $table
+     * @param  Closure|Expression|string  $first
+     * @param  string  $operator
+     * @param  Expression|string  $second
+     */
     public function straightJoinWhere($table, $first, $operator, $second): never
     {
         $this->unsupported('straightJoinWhere');
     }
 
+    /**
+     * @param  \Closure|\Illuminate\Database\Eloquent\Builder<*>|\Illuminate\Database\Query\Builder|string  $query
+     * @param  string  $as
+     * @param  Closure|Expression|string  $first
+     * @param  string|null  $operator
+     * @param  Expression|string|null  $second
+     */
     public function straightJoinSub($query, $as, $first, $operator = null, $second = null): never
     {
         $this->unsupported('straightJoinSub');
