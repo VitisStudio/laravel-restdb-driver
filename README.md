@@ -231,7 +231,12 @@ Petstore API through the generic adapter (`php artisan demo`).
 ## Requirements
 
 - PHP **8.2+**
-- Laravel **11, 12, or 13**
+- Laravel **12 or 13**
+
+Laravel 11 is not supported: it is end-of-life at v11.55.0, and every 11.x
+release is affected by an unpatched CRLF-injection advisory
+([PKSA-mdq4-51ck-6kdq](https://packagist.org/security-advisories/)) that was
+fixed only in 12.60.0 and 13.10.0.
 
 ## Development
 
