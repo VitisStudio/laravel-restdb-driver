@@ -1,0 +1,93 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Collisions", "version": "1.0.0" },
+  "paths": {
+    "/objects/order-entry/document": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/OrderEntryDocument" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/objects/purchasing/document": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PurchasingDocument" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/objects/inventory-control/document": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/InventoryDocument" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/objects/order-entry/customer": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Customer" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "OrderEntryDocument": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "documentNumber": { "type": "string" },
+          "total": { "type": "number", "format": "float" }
+        }
+      },
+      "PurchasingDocument": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "documentNumber": { "type": "string" },
+          "vendorId": { "type": "string" }
+        }
+      },
+      "InventoryDocument": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "documentNumber": { "type": "string" },
+          "warehouseId": { "type": "string" }
+        }
+      },
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    }
+  }
+}

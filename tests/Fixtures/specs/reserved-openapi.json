@@ -1,0 +1,103 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Reserved words + collisions fixture", "version": "1.0.0" },
+  "servers": [{ "url": "https://example.test/api" }],
+  "paths": {
+    "/lists": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "A page of lists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/List" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prints": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "A page of prints",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Print" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{documentName}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "A single document by name",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Document" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "A page of orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "List": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "label": { "type": "string" } }
+      },
+      "Print": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "copies": { "type": "integer" } }
+      },
+      "Document": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "total": { "type": "number", "format": "float" },
+          "subTotals": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } },
+          "sub_totals": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } }
+        }
+      }
+    }
+  }
+}

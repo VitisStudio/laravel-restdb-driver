@@ -1,0 +1,201 @@
+{
+    "openapi": "3.0.3",
+    "info": { "title": "Blog API", "version": "1.0.0" },
+    "servers": [{ "url": "https://blog.test/api/v1" }],
+    "paths": {
+        "/authors": {
+            "get": {
+                "operationId": "list-authors",
+                "parameters": [
+                    { "name": "filter[status]", "in": "query", "schema": { "type": "string" } },
+                    { "name": "sort", "in": "query", "schema": { "type": "string" } },
+                    { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+                    { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of authors",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": { "type": "array", "items": { "$ref": "#/components/schemas/Author" } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "create-author",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/Author" }
+                        }
+                    }
+                },
+                "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Author" } } } } }
+            }
+        },
+        "/authors/{id}": {
+            "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+            "get": {
+                "operationId": "get-author",
+                "responses": { "200": { "description": "One author", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Author" } } } } }
+            },
+            "patch": {
+                "operationId": "update-author",
+                "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Author" } } } },
+                "responses": { "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Author" } } } } }
+            },
+            "delete": { "operationId": "delete-author", "responses": { "204": { "description": "Deleted" } } }
+        },
+        "/posts": {
+            "get": {
+                "operationId": "list-posts",
+                "parameters": [
+                    { "name": "filter[status]", "in": "query", "schema": { "type": "string" } },
+                    { "name": "filter[authorId]", "in": "query", "schema": { "type": "string" } },
+                    { "name": "sort", "in": "query", "schema": { "type": "string" } },
+                    { "name": "include", "in": "query", "schema": { "type": "string" } },
+                    { "name": "fields", "in": "query", "schema": { "type": "string" } },
+                    { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+                    { "name": "offset", "in": "query", "schema": { "type": "integer" } }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "A page of posts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": { "type": "array", "items": { "$ref": "#/components/schemas/Post" } },
+                                        "meta": { "$ref": "#/components/schemas/PageMeta" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "create-post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "allOf": [
+                                    { "$ref": "#/components/schemas/Post" },
+                                    { "type": "object", "required": ["title"] }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": { "201": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Post" } } } } }
+            }
+        },
+        "/posts/{id}": {
+            "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+            "get": {
+                "operationId": "get-post",
+                "responses": { "200": { "description": "One post", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Post" } } } } }
+            },
+            "patch": {
+                "operationId": "update-post",
+                "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Post" } } } },
+                "responses": { "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Post" } } } } }
+            },
+            "delete": { "operationId": "delete-post", "responses": { "204": { "description": "Deleted" } } }
+        },
+        "/posts/{id}/publish": {
+            "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+            "post": {
+                "operationId": "publish-post",
+                "responses": { "200": { "description": "Publish result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionResult" } } } } }
+            }
+        },
+        "/comments": {
+            "get": {
+                "operationId": "list-comments",
+                "responses": { "200": { "description": "Comments", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Comment" } } } } } }
+            }
+        },
+        "/comments/{id}": {
+            "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+            "get": {
+                "operationId": "get-comment",
+                "responses": { "200": { "description": "One comment", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Comment" } } } } }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Author": {
+                "type": "object",
+                "description": "A blog author.",
+                "properties": {
+                    "id": { "type": "string", "readOnly": true },
+                    "name": { "type": "string" },
+                    "email": { "type": "string", "format": "email" },
+                    "postCount": { "type": "integer", "format": "int64" },
+                    "joinedAt": { "type": "string", "format": "date-time" },
+                    "posts": { "type": "array", "items": { "$ref": "#/components/schemas/Post" } }
+                }
+            },
+            "Post": {
+                "type": "object",
+                "description": "A blog post.",
+                "properties": {
+                    "id": { "type": "string", "readOnly": true },
+                    "title": { "type": "string" },
+                    "viewCount": { "type": "integer" },
+                    "rating": { "type": "number", "format": "float" },
+                    "featured": { "type": "boolean" },
+                    "publishedAt": { "type": "string", "format": "date-time" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "geo": { "$ref": "#/components/schemas/Geo" },
+                    "author": { "$ref": "#/components/schemas/Author" },
+                    "comments": { "type": "array", "items": { "$ref": "#/components/schemas/Comment" } }
+                }
+            },
+            "Comment": {
+                "type": "object",
+                "description": "A comment on a post.",
+                "properties": {
+                    "id": { "type": "string", "readOnly": true },
+                    "body": { "type": "string" },
+                    "approved": { "type": "boolean" },
+                    "post": { "$ref": "#/components/schemas/Post" }
+                }
+            },
+            "Geo": {
+                "type": "object",
+                "description": "An inline value object — never exposed at a path, so it stays a cast, not a model.",
+                "properties": {
+                    "lat": { "type": "number", "format": "double" },
+                    "lng": { "type": "number", "format": "double" }
+                }
+            },
+            "PageMeta": {
+                "type": "object",
+                "properties": {
+                    "total": { "type": "integer" },
+                    "perPage": { "type": "integer" }
+                }
+            },
+            "ActionResult": {
+                "type": "object",
+                "description": "The response body of an RPC action endpoint — becomes a model unless the action path is excluded.",
+                "properties": {
+                    "code": { "type": "integer" },
+                    "message": { "type": "string" }
+                }
+            }
+        }
+    }
+}

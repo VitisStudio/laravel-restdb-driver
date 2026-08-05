@@ -1,0 +1,247 @@
+<p align="center">
+  <img src="art/hero.jpg" alt="RestDB — Eloquent over any REST API" width="900">
+</p>
+
+**An Eloquent database driver for RESTful APIs.** Anything that talks to an
+Eloquent model can talk to this driver without knowing it isn't a database —
+within the capabilities the connection declares. Everything outside those
+capabilities fails loudly with an actionable exception. Nothing is ever
+silently dropped.
+
+```php
+$articles = Article::where('status', 'open')
+    ->where('rating', '>=', 4)
+    ->orderByDesc('created_at')
+    ->limit(25)
+    ->get();
+// GET https://api.example.com/v2/articles?filter[status]=open&filter[rating][gte]=4&sort=-createdAt&page[size]=25
+```
+
+## How a query becomes an HTTP request
+
+```mermaid
+flowchart TD
+    M["Eloquent model<br/><code>Article::where(...)->get()</code>"] --> QB
+
+    subgraph core["vitisstudio/restdb (core)"]
+        QB["Gated query builder<br/><small>Query\Builder</small>"]
+        GATE{{"Capability gate<br/><small>declared? else throw</small>"}}
+        IF["IntentFactory<br/><small>→ SelectIntent / Insert / Update / Delete</small>"]
+        CONN["RestConnection<br/><small>compile → drain → map</small>"]
+        TR["Transport<br/><small>PendingRequest, auth, retry</small>"]
+        PARSE["ResponseParser<br/><small>rows / writeResult / errors</small>"]
+        PAGE{"Paginator<br/><small>nextRequest?</small>"}
+    end
+
+    subgraph adapter["Adapter (generic · json-api · your own)"]
+        COMP["RequestCompiler<br/><small>intent → CompiledRequest</small>"]
+    end
+
+    MW["User middleware<br/><small>cache · rate limit · logging</small>"]
+    API[("REST API")]
+
+    QB --> GATE
+    GATE -- "ok" --> IF
+    GATE -- "unsupported" --> X["UnsupportedCapabilityException<br/><small>at your line</small>"]
+    IF --> CONN
+    CONN --> COMP
+    COMP --> CONN
+    CONN --> TR
+    TR --> MW
+    MW --> API
+    API --> TR
+    TR --> PARSE
+    PARSE --> PAGE
+    PAGE -- "more pages" --> TR
+    PAGE -- "done" --> HYDRATE["Hydrated models<br/><small>back to Eloquent</small>"]
+```
+
+Capabilities come from the adapter baseline, the paginator, an optional
+discovered manifest, and declared config (which always wins). The compiler,
+parser, and paginator are the adapter's job — `generic` shapes them from
+config/presets, `json-api` ships them preconfigured. Everything the connection
+can't do throws at the call site; nothing is silently dropped.
+
+This repository is a monorepo of four stacked packages:
+
+| Package                                        | Requires  | What it is                                                                                      |
+| ---------------------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| [`vitisstudio/restdb-contracts`](packages/contracts) | nothing   | The SPI: contracts, value objects, capability primitives                                        |
+| [`vitisstudio/restdb`](packages/core)                | contracts | The driver: connection, gated builder, transport, auth, config-driven generic adapter + presets |
+| [`vitisstudio/restdb-jsonapi`](packages/jsonapi)     | core      | A complete JSON:API v1.1 adapter, including spec-driven model generation                        |
+| [`vitisstudio/restdb-openapi`](packages/openapi)     | core      | Eloquent model generation from a plain OpenAPI 3.0.x spec (for the generic adapter)             |
+
+## Quick start (plain REST backend)
+
+```bash
+composer require vitisstudio/restdb
+```
+
+Most plain REST APIs need **no code** — the generic adapter's compiler,
+parser, and paginator are shaped by config. For a known server framework,
+one preset line carries the whole wire format _and_ the capabilities it
+honors:
+
+```php
+// config/database.php
+'connections' => [
+    'jsonplaceholder' => [
+        'driver'   => 'restdb',
+        'adapter'  => 'generic',
+        'base_url' => 'https://jsonplaceholder.typicode.com',
+        'preset'   => 'json-server',   // _gte suffixes, _sort/_order, X-Total-Count totals
+    ],
+],
+```
+
+APIs without a preset describe their wire format granularly — on the
+connection, or as a reusable named preset in `config/restdb.php`:
+
+```php
+'presets' => [
+    'corp-api' => [
+        'filters'    => ['style' => 'bracket', 'wrapper' => 'filter'], // filter[age][gte]=18
+        'sort'       => ['param' => 'sort'],                           // sort=-createdAt
+        'pagination' => [
+            'params'     => ['page' => 'page', 'limit' => 'per_page'],
+            'total_path' => 'meta.total',
+        ],
+        'response'     => ['data' => 'data'],                          // {"data": [...]}
+        'capabilities' => ['select' => true, 'sort' => true, 'filter' => ['operators' => ['eq', 'gte']]],
+    ],
+],
+```
+
+Hand-written compiler/parser/paginator classes remain the escape hatch for
+APIs that outgrow configuration (`'compiler' => MyCompiler::class`).
+
+If the REST API publishes an **OpenAPI 3.0.x** document, generate the model
+classes from it instead of hand-writing them:
+
+```bash
+composer require vitisstudio/restdb-openapi
+
+php artisan restdb:make-openapi-models jsonplaceholder \
+    --spec=storage/api-specs/openapi.json \
+    --path=app/Models --namespace="App\Models" \
+    --exclude=/uploadImage        # drop RPC action endpoints
+```
+
+It emits one committed model per schema exposed at a path — attributes and
+casts from the schema types, `belongsTo`/`hasMany` from `$ref`-to-a-resource
+relationships. Nested value objects and envelope schemas stay inline; nothing
+is invented from naming. See [`examples/petstore`](examples/petstore) for a
+runnable end-to-end demo.
+
+## Quick start (JSON:API backend)
+
+```bash
+composer require vitisstudio/restdb-jsonapi
+```
+
+```php
+// config/database.php
+'connections' => [
+    'crm' => [
+        'driver'   => 'restdb',
+        'adapter'  => 'json-api',
+        'base_url' => env('CRM_API_URL'),
+        'auth' => [
+            'driver'        => 'oauth2_client_credentials',
+            'token_url'     => env('CRM_TOKEN_URL'),
+            'client_id'     => env('CRM_CLIENT_ID'),
+            'client_secret' => env('CRM_CLIENT_SECRET'),
+        ],
+        'pagination' => ['strategy' => 'page-number', 'size' => 50, 'meta_total' => 'meta.page.total'],
+        'filter_dialect' => 'nested-operator',
+        'capabilities' => [
+            'page.total' => true,
+            'aggregate.count' => true,
+        ],
+    ],
+],
+```
+
+Generate physical model classes from the API's OpenAPI spec — committed code
+you own and edit:
+
+```bash
+php artisan restdb:make-models crm --spec=storage/api-specs/crm.json \
+    --path=app/Models/Crm --namespace="App\Models\Crm"
+```
+
+Then use them like any other Eloquent model: `find`, `where`, `with`
+(compound documents — zero extra HTTP), `paginate` (one request, totals from
+meta), `save` (dirty-only PATCH), `delete`.
+
+## The capability system
+
+A connection can only do what it declares. The `generic` adapter starts from
+**nothing** — a preset _declares_ what its named server framework honors, it
+never derives; the `json-api` adapter starts from what the spec guarantees.
+Capabilities layer bottom-up: adapter baseline → paginator contributions →
+discovered manifest (advisory) → declared config (always wins). Models may
+narrow, never widen. Anything undeclared throws at your line:
+
+```
+Connection [crm] does not support [page.limit] (used in limit() on App\Models\Article).
+Hint: if the API actually supports it, add 'page.limit' under
+connections.crm.capabilities — or remove the limit() call.
+```
+
+Inspect any connection with `php artisan restdb:capabilities crm`.
+
+## Commands
+
+| Command                                                                  | Purpose                                                           |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `restdb:capabilities {connection}`                                       | Print the effective capability matrix                             |
+| `restdb:discover {connection} --spec= [--check]`                         | Spec → committed capability manifest (advisory; `--check` for CI) |
+| `restdb:make-models {connection} --spec= [--path= --namespace= --force]` | JSON:API spec → physical Eloquent classes (`vitisstudio/restdb-jsonapi`) |
+| `restdb:make-openapi-models {connection} --spec= [--path= --namespace= --exclude= --force]` | OpenAPI 3.0.x spec → physical Eloquent classes (`vitisstudio/restdb-openapi`) |
+
+## Example app
+
+[`examples/jsonplaceholder`](examples/jsonplaceholder) is a runnable Laravel
+app querying the **live** JSONPlaceholder API through Eloquent off the
+`json-server` preset alone (zero custom classes) — filters, one-request
+pagination off the `X-Total-Count` header, relations, writes, and what
+fail-loud looks like:
+
+```bash
+cd examples/jsonplaceholder && composer install && php artisan demo
+```
+
+The same app also drives a **real JSON:API server** — the hatchify-powered
+mock in [`tools/mock-jsonapi`](tools/mock-jsonapi) — through the `json-api`
+adapter (`php artisan demo:crm`): dollar-operator filters, compound-document
+eager loading, total-based pagination against a server that sends no `links`,
+and typed writes via `resource_types`.
+
+[`examples/filament-crm`](examples/filament-crm) goes further: a **Filament
+v5 admin panel** with full CRUD resources and relation managers for the same
+three models — tables, filters, forms, and relation managers all running on
+HTTP through the driver instead of SQL.
+
+[`examples/petstore`](examples/petstore) is a **Laravel 13** app whose models
+are generated from the real [Swagger Petstore](https://petstore3.swagger.io/)
+OpenAPI 3 spec via `restdb:make-openapi-models`, then run live against the
+Petstore API through the generic adapter (`php artisan demo`).
+
+## Requirements
+
+- PHP **8.2+**
+- Laravel **11, 12, or 13**
+
+## Development
+
+```bash
+composer install
+composer test        # pest
+composer analyse     # larastan, level max
+composer format      # pint
+composer monorepo:validate
+```
+
+Packages are split to read-only mirrors on tag via
+`monorepo-split-github-action` (requires the `SPLIT_ACCESS_TOKEN` secret).

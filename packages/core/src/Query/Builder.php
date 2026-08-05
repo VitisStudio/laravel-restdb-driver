@@ -1,0 +1,740 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Vitis\RestDB\Query;
+
+use BadMethodCallException;
+use Closure;
+use Illuminate\Support\LazyCollection;
+use LogicException;
+use Vitis\RestDB\Capabilities\Capability;
+use Vitis\RestDB\Capabilities\CapabilityGate;
+use Vitis\RestDB\Capabilities\Operator;
+use Vitis\RestDB\Connection\RestConnection;
+use Vitis\RestDB\Exceptions\UnsupportedQueryException;
+use Vitis\RestDB\Values\CompiledRequest;
+use Vitis\RestDB\Values\SelectIntent;
+
+/**
+ * The gated query builder. Mutators check the capability gate before touching
+ * state (phase 1 — the exception fires at the developer's own line); the
+ * IntentFactory re-validates everything at compile time (phase 2). SQL-only
+ * surface always throws, mongodb-driver style.
+ *
+ * @phpstan-consistent-constructor
+ */
+class Builder extends \Illuminate\Database\Query\Builder
+{
+    /** Model class for exception messages, set by the Eloquent builder. */
+    protected ?string $modelContext = null;
+
+    /** Primary key name, set by the model trait. Identity wheres bypass filter caps. */
+    protected string $keyName = 'id';
+
+    /** True once select()/addSelect() was called explicitly by the developer. */
+    protected bool $explicitColumns = false;
+
+    /**
+     * Relation paths to side-load (compound documents / eager side-load).
+     * Set by adapter-specific Eloquent builders; gated on select.include.
+     *
+     * @var list<string>
+     */
+    public array $includes = [];
+
+    /** 1-based page for page-number strategies; gated on page.number. */
+    public ?int $pageNumber = null;
+
+    public function setModelContext(?string $model): void
+    {
+        $this->modelContext = $model;
+    }
+
+    public function getModelContext(): ?string
+    {
+        return $this->modelContext;
+    }
+
+    public function setKeyName(string $keyName): void
+    {
+        $this->keyName = $keyName;
+    }
+
+    public function keyName(): string
+    {
+        return $this->keyName;
+    }
+
+    public function explicitColumns(): bool
+    {
+        return $this->explicitColumns;
+    }
+
+    public function newQuery()
+    {
+        $query = new static($this->connection, $this->grammar, $this->processor);
+        $query->modelContext = $this->modelContext;
+        $query->keyName = $this->keyName;
+        $query->includes = $this->includes;
+        $query->pageNumber = $this->pageNumber;
+
+        return $query;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Gated mutators — phase 1
+    |--------------------------------------------------------------------------
+    */
+
+    public function where($column, $operator = null, $value = null, $boolean = 'and')
+    {
+        // Nested closures and key-value arrays both become Nested where groups;
+        // they are gated late by the IntentFactory, which can flatten pure-AND
+        // groups instead of demanding filter.nested for flat conditions.
+        if (is_array($column) || ($column instanceof Closure && $operator === null && $value === null)) {
+            return parent::where($column, $operator, $value, $boolean);
+        }
+
+        if ($this->isQueryable($column)) {
+            throw UnsupportedQueryException::subquery('where');
+        }
+
+        // Mirror the base builder's normalization so the gate inspects exactly
+        // what the parent will store: 2-arg shorthand means '='; an
+        // unrecognized operator string is treated as the value of an '='.
+        if (func_num_args() === 2) {
+            [$value, $operator] = [$operator, '='];
+        } elseif (is_string($operator) && $this->invalidOperator($operator)) {
+            [$value, $operator] = [$operator, '='];
+        }
+
+        $operator = is_string($operator) ? $operator : '=';
+
+        if ($this->isQueryable($value)) {
+            throw UnsupportedQueryException::subquery('where');
+        }
+
+        // Null value falls through to whereNull()/whereNotNull(), gated there.
+        if ($value !== null) {
+            $mapped = Operator::fromSqlOperator($operator)
+                ?? throw UnsupportedQueryException::sqlOperator($operator);
+
+            if (! $this->isIdentityWhere($column, $mapped, $boolean)) {
+                $this->gate()->ensureOperator($mapped, $this->isOr($boolean) ? 'orWhere' : 'where', $this->modelContext);
+            }
+        }
+
+        return parent::where($column, $operator, $value, $boolean);
+    }
+
+    public function whereIn($column, $values, $boolean = 'and', $not = false)
+    {
+        if ($this->isQueryable($values)) {
+            throw UnsupportedQueryException::subquery($not ? 'whereNotIn' : 'whereIn');
+        }
+
+        if ($not || ! $this->isIdentityWhere($column, Operator::In, $boolean)) {
+            $method = ($this->isOr($boolean) ? 'orWhere' : 'where').($not ? 'NotIn' : 'In');
+            $this->gate()->ensureOperator($not ? Operator::NotIn : Operator::In, $method, $this->modelContext);
+        }
+
+        return parent::whereIn($column, $values, $boolean, $not);
+    }
+
+    public function whereNull($columns, $boolean = 'and', $not = false)
+    {
+        // Gated at intent build (IntentFactory), not here. Null checks arrive
+        // from Eloquent plumbing on queries that never execute — BelongsTo
+        // constraints on an unset foreign key compile to whereNull(ownerKey),
+        // and relations constrain `fk = ?` AND `fk IS NOT NULL` whose NotNull
+        // is implied and pruned. Real null filters still throw before any
+        // HTTP, at execution instead of at this call site.
+        return parent::whereNull($columns, $boolean, $not);
+    }
+
+    /** @param iterable<mixed> $values */
+    public function whereBetween($column, iterable $values, $boolean = 'and', $not = false)
+    {
+        if ($not) {
+            throw UnsupportedQueryException::notBetween();
+        }
+
+        $this->gate()->ensureOperator(Operator::Between, 'whereBetween', $this->modelContext);
+
+        return parent::whereBetween($column, $values, $boolean, $not);
+    }
+
+    public function orderBy($column, $direction = 'asc')
+    {
+        if ($this->isQueryable($column)) {
+            throw UnsupportedQueryException::subquery('orderBy');
+        }
+
+        $this->gate()->ensure(Capability::Sort, 'orderBy', $this->modelContext);
+
+        if (count($this->orders ?? []) >= 1) {
+            $this->gate()->ensure(Capability::MultiSort, 'orderBy', $this->modelContext);
+        }
+
+        return parent::orderBy($column, $direction);
+    }
+
+    public function limit($value)
+    {
+        // limit(1) riding on a lone primary-key equality is find()/first()-by-key:
+        // the compiler emits a resource GET and the limit never reaches the wire,
+        // so it is identity targeting, not paging — same doctrine as
+        // isIdentityWhere(). Anything else is real pagination and stays gated.
+        if ($value !== 1 || ! $this->hasLoneIdentityWhere()) {
+            $this->gate()->ensure(Capability::Limit, 'limit', $this->modelContext);
+        }
+
+        return parent::limit($value);
+    }
+
+    public function offset($value)
+    {
+        $this->gate()->ensure(Capability::Offset, 'offset', $this->modelContext);
+
+        return parent::offset($value);
+    }
+
+    public function select($columns = ['*'])
+    {
+        $columns = is_array($columns) ? $columns : func_get_args();
+
+        if ($columns !== ['*']) {
+            $this->gate()->ensure(Capability::Columns, 'select', $this->modelContext);
+            $this->explicitColumns = true;
+        }
+
+        return parent::select($columns);
+    }
+
+    public function addSelect($column)
+    {
+        $this->gate()->ensure(Capability::Columns, 'addSelect', $this->modelContext);
+        $this->explicitColumns = true;
+
+        return parent::addSelect(is_array($column) ? $column : func_get_args());
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Terminals
+    |--------------------------------------------------------------------------
+    */
+
+    public function toIntent(?int $forcedLimit = null): SelectIntent
+    {
+        return IntentFactory::select($this, $forcedLimit);
+    }
+
+    /** The REST equivalent of toSql(). */
+    public function toRequest(): CompiledRequest
+    {
+        $compiled = $this->restConnection()->compile($this->toIntent());
+
+        if ($compiled instanceof CompiledRequest) {
+            return $compiled;
+        }
+
+        throw new LogicException('This query provably matches nothing (e.g. whereIn over an empty list) — no request is compiled.');
+    }
+
+    /** @return list<array<string, mixed>> */
+    protected function runSelect()
+    {
+        return $this->restConnection()->select($this->toIntent(), [], ! $this->useWritePdo);
+    }
+
+    /** @return LazyCollection<int, \stdClass> */
+    public function cursor()
+    {
+        return new LazyCollection(function () {
+            yield from $this->restConnection()->cursor($this->toIntent(), [], ! $this->useWritePdo);
+        });
+    }
+
+    public function exists()
+    {
+        $this->gate()->ensure(Capability::Exists, 'exists', $this->modelContext);
+
+        return $this->restConnection()->select($this->toIntent(forcedLimit: 1), [], true) !== [];
+    }
+
+    public function aggregate($function, $columns = ['*'])
+    {
+        if ($function !== 'count') {
+            throw UnsupportedQueryException::aggregate($function);
+        }
+
+        $this->gate()->ensure(Capability::Count, 'count', $this->modelContext);
+
+        return parent::aggregate($function, $columns);
+    }
+
+    /**
+     * Two emulation paths, both one request: an adapter that understands the
+     * count intent returns an 'aggregate' row; otherwise a limit-1 probe reads
+     * the total from pagination metadata (JSON:API meta totals).
+     */
+    public function count($columns = '*')
+    {
+        $this->gate()->ensure(Capability::Count, 'count', $this->modelContext);
+
+        $previous = $this->aggregate;
+        $this->aggregate = ['function' => 'count', 'columns' => [$columns]];
+
+        try {
+            $rows = $this->restConnection()->select($this->toIntent(forcedLimit: 1), [], true);
+        } finally {
+            $this->aggregate = $previous;
+        }
+
+        $aggregate = $rows[0]['aggregate'] ?? null;
+
+        if (is_numeric($aggregate)) {
+            return max(0, (int) $aggregate);
+        }
+
+        $total = $this->restConnection()->lastPageInfo()?->total;
+
+        if (is_int($total)) {
+            return max(0, $total);
+        }
+
+        throw new BadMethodCallException(
+            'count() needs an adapter that answers count intents, or a configured pagination.meta_total path.',
+        );
+    }
+
+    /**
+     * The base paginator's standalone count query (Filament tables and
+     * anything else calling getCountForPagination()) — answered through the
+     * same one-request count emulation as count().
+     *
+     * @param  array<int, string>|string  $columns
+     * @return list<array{aggregate: int}>
+     */
+    protected function runPaginationCountQuery($columns = ['*'])
+    {
+        return [['aggregate' => $this->count(is_array($columns) ? ($columns[0] ?? '*') : $columns)]];
+    }
+
+    /** @param array<mixed> $values */
+    public function insert(array $values)
+    {
+        $this->gate()->ensure(Capability::Insert, 'insert', $this->modelContext);
+
+        if ($values === []) {
+            return true;
+        }
+
+        return $this->restConnection()->insert(IntentFactory::insert($this, $values), []);
+    }
+
+    /** @param array<mixed> $values */
+    public function insertGetId(array $values, $sequence = null)
+    {
+        $this->gate()->ensure(Capability::Insert, 'insertGetId', $this->modelContext);
+
+        $this->restConnection()->insert(IntentFactory::insert($this, $values), []);
+
+        $id = $this->restConnection()->lastWriteResult()?->id;
+
+        if (! is_numeric($id)) {
+            throw new LogicException(
+                'The API returned a non-numeric id for an incrementing-key model. '
+                .'Set $incrementing = false (string keys) and read the id from the re-filled model.',
+            );
+        }
+
+        return (int) $id;
+    }
+
+    /** @param array<mixed> $values */
+    public function update(array $values)
+    {
+        $this->gate()->ensure(Capability::Update, 'update', $this->modelContext);
+
+        return $this->restConnection()->update(IntentFactory::update($this, $values), []);
+    }
+
+    public function delete($id = null)
+    {
+        $this->gate()->ensure(Capability::Delete, 'delete', $this->modelContext);
+
+        if ($id !== null) {
+            $this->where($this->keyName, '=', $id);
+        }
+
+        return $this->restConnection()->delete(IntentFactory::delete($this), []);
+    }
+
+    public function toSql(): never
+    {
+        throw new BadMethodCallException(
+            'toSql() is not supported by the restdb driver — there is no SQL. Use toRequest() instead.',
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SQL-only surface — always throws
+    |--------------------------------------------------------------------------
+    */
+
+    /** @param mixed ...$distinct */
+    public function distinct(...$distinct): never
+    {
+        $this->unsupported('distinct');
+    }
+
+    /** @param array<mixed> $bindings */
+    public function selectRaw($expression, array $bindings = []): never
+    {
+        $this->unsupported('selectRaw');
+    }
+
+    public function selectSub($query, $as): never
+    {
+        $this->unsupported('selectSub');
+    }
+
+    public function fromRaw($expression, $bindings = []): never
+    {
+        $this->unsupported('fromRaw');
+    }
+
+    public function fromSub($query, $as): never
+    {
+        $this->unsupported('fromSub');
+    }
+
+    public function join($table, $first, $operator = null, $second = null, $type = 'inner', $where = false): never
+    {
+        $this->unsupported('join');
+    }
+
+    public function joinWhere($table, $first, $operator, $second, $type = 'inner'): never
+    {
+        $this->unsupported('joinWhere');
+    }
+
+    public function joinSub($query, $as, $first, $operator = null, $second = null, $type = 'inner', $where = false): never
+    {
+        $this->unsupported('joinSub');
+    }
+
+    public function leftJoin($table, $first, $operator = null, $second = null): never
+    {
+        $this->unsupported('leftJoin');
+    }
+
+    public function rightJoin($table, $first, $operator = null, $second = null): never
+    {
+        $this->unsupported('rightJoin');
+    }
+
+    public function crossJoin($table, $first = null, $operator = null, $second = null): never
+    {
+        $this->unsupported('crossJoin');
+    }
+
+    public function straightJoin($table, $first, $operator = null, $second = null): never
+    {
+        $this->unsupported('straightJoin');
+    }
+
+    public function straightJoinWhere($table, $first, $operator, $second): never
+    {
+        $this->unsupported('straightJoinWhere');
+    }
+
+    public function straightJoinSub($query, $as, $first, $operator = null, $second = null): never
+    {
+        $this->unsupported('straightJoinSub');
+    }
+
+    public function union($query, $all = false): never
+    {
+        $this->unsupported('union');
+    }
+
+    public function unionAll($query): never
+    {
+        $this->unsupported('unionAll');
+    }
+
+    /** @param mixed ...$groups */
+    public function groupBy(...$groups): never
+    {
+        $this->unsupported('groupBy');
+    }
+
+    /** @param array<mixed> $bindings */
+    public function groupByRaw($sql, array $bindings = []): never
+    {
+        $this->unsupported('groupByRaw');
+    }
+
+    public function having($column, $operator = null, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('having');
+    }
+
+    /** @param array<mixed> $bindings */
+    public function havingRaw($sql, array $bindings = [], $boolean = 'and'): never
+    {
+        $this->unsupported('havingRaw');
+    }
+
+    /** @param iterable<mixed> $values */
+    public function havingBetween($column, iterable $values, $boolean = 'and', $not = false): never
+    {
+        $this->unsupported('havingBetween');
+    }
+
+    public function whereColumn($first, $operator = null, $second = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereColumn');
+    }
+
+    public function whereExists($callback, $boolean = 'and', $not = false): never
+    {
+        $this->unsupported('whereExists');
+    }
+
+    public function whereRaw($sql, $bindings = [], $boolean = 'and'): never
+    {
+        $this->unsupported('whereRaw');
+    }
+
+    /** @param array<mixed> $bindings */
+    public function orderByRaw($sql, $bindings = []): never
+    {
+        $this->unsupported('orderByRaw');
+    }
+
+    public function inRandomOrder($seed = ''): never
+    {
+        $this->unsupported('inRandomOrder');
+    }
+
+    /** @param array<mixed> $options */
+    public function whereFullText($columns, $value, array $options = [], $boolean = 'and'): never
+    {
+        $this->unsupported('whereFullText');
+    }
+
+    public function whereJsonContains($column, $value, $boolean = 'and', $not = false): never
+    {
+        $this->unsupported('whereJsonContains');
+    }
+
+    public function whereJsonLength($column, $operator, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereJsonLength');
+    }
+
+    public function whereDate($column, $operator, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereDate');
+    }
+
+    public function whereTime($column, $operator, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereTime');
+    }
+
+    public function whereDay($column, $operator, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereDay');
+    }
+
+    public function whereMonth($column, $operator, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereMonth');
+    }
+
+    public function whereYear($column, $operator, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereYear');
+    }
+
+    /**
+     * Eloquent relations use this as an integer-key whereIn optimization
+     * ("raw" only in the SQL-binding sense) — route it through the gated
+     * whereIn so eager loading works like any other In condition.
+     *
+     * @param  array<mixed>  $values
+     */
+    public function whereIntegerInRaw($column, $values, $boolean = 'and', $not = false)
+    {
+        $integers = [];
+
+        foreach ($values as $value) {
+            $integers[] = (int) (is_scalar($value) ? $value : throw UnsupportedQueryException::rawExpression('whereIntegerInRaw'));
+        }
+
+        return $this->whereIn($column, $integers, $boolean, $not);
+    }
+
+    /** @param array<mixed> $values */
+    public function whereIntegerNotInRaw($column, $values, $boolean = 'and')
+    {
+        return $this->whereIntegerInRaw($column, $values, $boolean, true);
+    }
+
+    public function whereAll($columns, $operator = null, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereAll');
+    }
+
+    public function whereAny($columns, $operator = null, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereAny');
+    }
+
+    public function whereNone($columns, $operator = null, $value = null, $boolean = 'and'): never
+    {
+        $this->unsupported('whereNone');
+    }
+
+    public function lock($value = true): never
+    {
+        $this->unsupported('lock');
+    }
+
+    public function lockForUpdate(): never
+    {
+        $this->unsupported('lockForUpdate');
+    }
+
+    public function sharedLock(): never
+    {
+        $this->unsupported('sharedLock');
+    }
+
+    /**
+     * @param  array<mixed>  $values
+     * @param  mixed  $uniqueBy
+     * @param  mixed  $update
+     */
+    public function upsert(array $values, $uniqueBy, $update = null): never
+    {
+        $this->unsupported('upsert');
+    }
+
+    /** @param array<mixed> $values */
+    public function insertOrIgnore(array $values): never
+    {
+        $this->unsupported('insertOrIgnore');
+    }
+
+    /** @param array<mixed> $columns */
+    public function insertUsing(array $columns, $query): never
+    {
+        $this->unsupported('insertUsing');
+    }
+
+    /** @param array<mixed> $values */
+    public function updateFrom(array $values): never
+    {
+        $this->unsupported('updateFrom');
+    }
+
+    public function truncate(): never
+    {
+        $this->unsupported('truncate');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    protected function gate(): CapabilityGate
+    {
+        return $this->restConnection()->gate();
+    }
+
+    protected function restConnection(): RestConnection
+    {
+        $connection = $this->connection;
+
+        if (! $connection instanceof RestConnection) {
+            throw new LogicException('Vitis\RestDB\Query\Builder requires a RestConnection.');
+        }
+
+        return $connection;
+    }
+
+    protected function isOr(string $boolean): bool
+    {
+        return str_contains(strtolower($boolean), 'or');
+    }
+
+    /**
+     * Primary-key equality is identity targeting (GET/PATCH/DELETE a resource
+     * by id) — the definition of REST, not a filter. It bypasses operator
+     * capabilities so find()/save()/delete() work on filterless connections.
+     */
+    protected function isIdentityWhere(mixed $column, Operator $operator, string $boolean): bool
+    {
+        if (! is_string($column) || $this->isOr($boolean)) {
+            return false;
+        }
+
+        $name = str_contains($column, '.') ? substr((string) strrchr($column, '.'), 1) : $column;
+
+        return $name === $this->keyName
+            && in_array($operator, [Operator::Eq, Operator::In], true);
+    }
+
+    /**
+     * True when the accumulated wheres are exactly one primary-key equality —
+     * the shape Eloquent's find()/whereKey()->first() builds. The compiler
+     * resolves that to a resource GET (identityTarget), so a limit(1) on top
+     * carries no paging semantics. Public: the IntentFactory applies the same
+     * exemption at compile time (phase 2).
+     */
+    public function hasLoneIdentityWhere(): bool
+    {
+        if (count($this->wheres) !== 1) {
+            return false;
+        }
+
+        $where = $this->wheres[0];
+
+        if (! is_array($where)) {
+            return false;
+        }
+
+        $type = $where['type'] ?? null;
+        $column = $where['column'] ?? null;
+        $boolean = $where['boolean'] ?? 'and';
+
+        if (! is_string($column) || ! is_string($boolean) || $this->isOr($boolean)) {
+            return false;
+        }
+
+        $name = str_contains($column, '.') ? substr((string) strrchr($column, '.'), 1) : $column;
+
+        if ($name !== $this->keyName) {
+            return false;
+        }
+
+        return ($type === 'Basic' && ($where['operator'] ?? null) === '=')
+            || ($type === 'In' && is_array($where['values'] ?? null) && count($where['values']) === 1);
+    }
+
+    protected function unsupported(string $method): never
+    {
+        throw new BadMethodCallException("{$method} is not supported by the restdb driver.");
+    }
+}
