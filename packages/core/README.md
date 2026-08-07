@@ -51,6 +51,26 @@ What you get:
   any class-string `Authenticator`. No static state — Octane-safe.
 - `Http::fake()` works everywhere; `DB::listen`/Telescope see real request
   lines with real timing.
+- Throttling: `429`/`503` responses retry on their own budget, honoring
+  `Retry-After` (delta-seconds or HTTP-date) and falling back to exponential
+  backoff, every wait capped by `max_wait`. Exhaustion throws a typed
+  `RestDBThrottledException` so callers can tell "busy, reschedule" from a
+  real failure.
+
+```php
+'http' => [
+    'timeout' => 30,
+    'connect_timeout' => 10,
+    'retry' => [
+        'times' => 1,      // attempts for connection failures
+        'sleep' => 100,    // ms; also the throttle backoff floor
+        'throttle' => [
+            'times' => 3,      // extra retries granted to 429/503; 0 disables
+            'max_wait' => 60,  // seconds; cap on any single throttle wait
+        ],
+    ],
+],
+```
 
 ## HTTP middleware — caching, rate limiting, logging
 

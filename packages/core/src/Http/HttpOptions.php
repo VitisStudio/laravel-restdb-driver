@@ -7,6 +7,10 @@ namespace Vitis\RestDB\Http;
 final class HttpOptions
 {
     /**
+     * @param  int  $throttleTimes  extra retries granted to throttled (429/503)
+     *                              responses; 0 disables throttle retries
+     * @param  int  $throttleMaxWait  ceiling in seconds on any single throttle
+     *                                wait, whether from Retry-After or backoff
      * @param  list<class-string>  $middleware  Guzzle handler-stack middleware
      *                                          class names, applied in order
      */
@@ -15,6 +19,8 @@ final class HttpOptions
         public readonly int $connectTimeout = 2,
         public readonly int $retryTimes = 1,
         public readonly int $retrySleep = 100,
+        public readonly int $throttleTimes = 3,
+        public readonly int $throttleMaxWait = 60,
         public readonly array $middleware = [],
     ) {}
 
@@ -22,12 +28,15 @@ final class HttpOptions
     public static function fromConfig(array $config): self
     {
         $retry = is_array($config['retry'] ?? null) ? $config['retry'] : [];
+        $throttle = is_array($retry['throttle'] ?? null) ? $retry['throttle'] : [];
 
         return new self(
             timeout: self::positiveInt($config['timeout'] ?? null, 10),
             connectTimeout: self::positiveInt($config['connect_timeout'] ?? null, 2),
             retryTimes: self::positiveInt($retry['times'] ?? null, 1),
             retrySleep: self::positiveInt($retry['sleep'] ?? null, 100),
+            throttleTimes: self::nonNegativeInt($throttle['times'] ?? null, 3),
+            throttleMaxWait: self::positiveInt($throttle['max_wait'] ?? null, 60),
             middleware: self::classStrings($config['middleware'] ?? null),
         );
     }
@@ -56,5 +65,10 @@ final class HttpOptions
     private static function positiveInt(mixed $value, int $default): int
     {
         return is_int($value) && $value > 0 ? $value : $default;
+    }
+
+    private static function nonNegativeInt(mixed $value, int $default): int
+    {
+        return is_int($value) && $value >= 0 ? $value : $default;
     }
 }
