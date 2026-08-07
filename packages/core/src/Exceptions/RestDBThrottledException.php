@@ -10,9 +10,10 @@ use Vitis\RestDB\Values\ApiResponse;
 use Vitis\RestDB\Values\CompiledRequest;
 
 /**
- * The API throttled the request (HTTP 429) and the transport's retry budget
- * ran out. Distinct from ApiResponseException so callers can tell "the origin
- * is busy, back off and reschedule" apart from a real failure.
+ * The API refused the request as busy — HTTP 429, or 503 from an overloaded
+ * origin — and the transport's retry budget ran out. Distinct from
+ * ApiResponseException so callers can tell "the origin is busy, back off and
+ * reschedule" apart from a real failure.
  */
 final class RestDBThrottledException extends RuntimeException implements RestDBException
 {

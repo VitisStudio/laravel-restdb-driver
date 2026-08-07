@@ -219,7 +219,11 @@ class RestConnection extends Connection
             );
         }
 
-        if ($response->status === 429) {
+        // The same pair the transport retries on the throttle budget. A 503
+        // that outlives that budget is still "the origin is busy", so it must
+        // reach the caller as one — not as a generic failure it would treat as
+        // broken.
+        if (in_array($response->status, [429, 503], true)) {
             throw RestDBThrottledException::exhausted(
                 $this->connectionConfig->name,
                 $request,

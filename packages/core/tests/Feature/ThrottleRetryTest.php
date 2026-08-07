@@ -104,6 +104,27 @@ it('surfaces a throttled exception once the budget is exhausted', function () {
     Http::assertSentCount(3);
 });
 
+it('surfaces an exhausted 503 as throttled, not as a generic failure', function () {
+    $this->defineOpenApiConnection([
+        'http' => ['retry' => ['throttle' => ['times' => 1]]],
+    ]);
+
+    Http::fake(['api.test/*' => Http::response('busy', 503, ['Retry-After' => '5'])]);
+
+    // A caller catching RestDBThrottledException to reschedule must not miss
+    // the overloaded-origin case — that is the one it exists for.
+    try {
+        Article::query()->get();
+        $this->fail('Expected a RestDBThrottledException.');
+    } catch (RestDBThrottledException $e) {
+        expect($e->status)->toBe(503)
+            ->and($e->retryAfter)->toBe(5)
+            ->and($e->getMessage())->toContain('throttled');
+    }
+
+    Http::assertSentCount(2);
+});
+
 it('does not retry throttles when the budget is zero', function () {
     $this->defineOpenApiConnection([
         'http' => ['retry' => ['throttle' => ['times' => 0]]],
