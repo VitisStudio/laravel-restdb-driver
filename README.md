@@ -133,6 +133,11 @@ relationships. Nested value objects and envelope schemas stay inline; nothing
 is invented from naming. See [`examples/petstore`](examples/petstore) for a
 runnable end-to-end demo.
 
+`--endpoints` additionally emits the collection paths, scalar query fields, and
+type-string → model morph map as constants on one generated class, derived from
+the same parse as the models so the runtime lookups cannot drift from them —
+see the [package README](packages/openapi#endpoint-field-and-model-maps).
+
 ## Quick start (JSON:API backend)
 
 ```bash
@@ -198,7 +203,7 @@ Inspect any connection with `php artisan restdb:capabilities crm`.
 | `restdb:capabilities {connection}`                                       | Print the effective capability matrix                             |
 | `restdb:discover {connection} --spec= [--check]`                         | Spec → committed capability manifest (advisory; `--check` for CI) |
 | `restdb:make-models {connection} --spec= [--path= --namespace= --force]` | JSON:API spec → physical Eloquent classes (`vitisstudio/restdb-jsonapi`) |
-| `restdb:make-openapi-models {connection} --spec= [--path= --namespace= --exclude= --force]` | OpenAPI 3.0.x spec → physical Eloquent classes (`vitisstudio/restdb-openapi`) |
+| `restdb:make-openapi-models {connection} --spec= [--path= --namespace= --connection-trait --endpoints= --endpoints-path= --exclude= --force]` | OpenAPI 3.0.x spec → physical Eloquent classes, optionally with an endpoint/field/model map (`vitisstudio/restdb-openapi`) |
 
 ## Example app
 
