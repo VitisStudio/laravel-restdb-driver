@@ -1,0 +1,43 @@
+# Groups the notes GitHub generates for a release (`--generate-notes`) into
+# categories by PR label. Only merged pull requests are categorised — work
+# pushed straight to main never appears as its own entry, whatever it changed.
+#
+# The labels mirror the ones the PR workflow applies from the branch prefix:
+#   feature/ feat/            -> enhancement
+#   fix/ bugfix/ hotfix/      -> bug
+#   chore/ docs/ refactor/ test/ -> chore
+# 'breaking-change' is applied by hand and drives the major version bump.
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+      - github-actions
+
+  categories:
+    - title: Breaking Changes
+      labels:
+        - breaking-change
+
+    - title: Features
+      labels:
+        - enhancement
+        - feature
+
+    - title: Bug Fixes
+      labels:
+        - bug
+
+    - title: Documentation
+      labels:
+        - documentation
+
+    - title: Maintenance
+      labels:
+        - chore
+
+    # Anything left over, so a PR is never silently dropped from the notes.
+    - title: Other Changes
+      labels:
+        - "*"
