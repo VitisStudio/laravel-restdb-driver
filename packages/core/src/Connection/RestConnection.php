@@ -17,6 +17,7 @@ use Vitis\RestDB\Contracts\RestDBException;
 use Vitis\RestDB\Exceptions\ApiResponseException;
 use Vitis\RestDB\Exceptions\ApiValidationException;
 use Vitis\RestDB\Exceptions\RestDBAuthenticationException;
+use Vitis\RestDB\Exceptions\RestDBThrottledException;
 use Vitis\RestDB\Exceptions\ResultTruncationException;
 use Vitis\RestDB\Http\Transport;
 use Vitis\RestDB\Query\Builder;
@@ -215,6 +216,14 @@ class RestConnection extends Connection
             throw ApiValidationException::fromErrorBag(
                 $this->connectionConfig->name,
                 $this->parser->errors($response),
+            );
+        }
+
+        if ($response->status === 429) {
+            throw RestDBThrottledException::exhausted(
+                $this->connectionConfig->name,
+                $request,
+                $response,
             );
         }
 
